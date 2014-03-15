@@ -1,0 +1,5 @@
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS\bin\x86\Debug\Win32Crc.dll
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS\bin\x86\Debug\TinyFS.dll
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS\bin\x86\Debug\TinyFS.pdb
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS\obj\x86\Debug\TinyFS.dll
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS\obj\x86\Debug\TinyFS.pdb

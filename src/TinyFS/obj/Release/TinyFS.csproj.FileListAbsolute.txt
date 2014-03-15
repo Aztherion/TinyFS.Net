@@ -1,0 +1,5 @@
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS\bin\Release\Win32Crc.dll
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS\bin\Release\TinyFS.dll
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS\bin\Release\TinyFS.pdb
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS\obj\Release\TinyFS.dll
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS\obj\Release\TinyFS.pdb

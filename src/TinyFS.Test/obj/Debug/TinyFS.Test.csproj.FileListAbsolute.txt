@@ -1,0 +1,16 @@
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\Unicorn.IO\TinyFS.Test\obj\Debug\TinyFS.Test.csprojResolveAssemblyReference.cache
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\Unicorn.IO\TinyFS.Test\bin\Debug\Win32Crc.dll
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\Unicorn.IO\TinyFS.Test\bin\Debug\TinyFS.Test.dll
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\Unicorn.IO\TinyFS.Test\bin\Debug\TinyFS.Test.pdb
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\Unicorn.IO\TinyFS.Test\bin\Debug\TinyFS.dll
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\Unicorn.IO\TinyFS.Test\bin\Debug\TinyFS.pdb
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\Unicorn.IO\TinyFS.Test\obj\Debug\TinyFS.Test.dll
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\Unicorn.IO\TinyFS.Test\obj\Debug\TinyFS.Test.pdb
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\Debug\Win32Crc.dll
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\Debug\TinyFS.Test.dll
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\Debug\TinyFS.Test.pdb
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\Debug\TinyFS.dll
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\Debug\TinyFS.pdb
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\obj\Debug\TinyFS.Test.csprojResolveAssemblyReference.cache
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\obj\Debug\TinyFS.Test.dll
+C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\obj\Debug\TinyFS.Test.pdb
