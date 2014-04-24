@@ -6,3 +6,11 @@ C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\Release\TinyFS.pdb
 C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\obj\Release\TinyFS.Test.csprojResolveAssemblyReference.cache
 C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\obj\Release\TinyFS.Test.dll
 C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\obj\Release\TinyFS.Test.pdb
+C:\Users\Benny\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\Release\Win32Crc.dll
+C:\Users\Benny\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\Release\TinyFS.Test.dll
+C:\Users\Benny\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\Release\TinyFS.Test.pdb
+C:\Users\Benny\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\Release\TinyFS.dll
+C:\Users\Benny\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\Release\TinyFS.pdb
+C:\Users\Benny\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\obj\Release\TinyFS.Test.csprojResolveAssemblyReference.cache
+C:\Users\Benny\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\obj\Release\TinyFS.Test.dll
+C:\Users\Benny\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\obj\Release\TinyFS.Test.pdb

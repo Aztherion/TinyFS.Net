@@ -15,6 +15,7 @@
 using System;
 using System.IO;
 using System.Diagnostics;
+using TinyFS.Locking;
 
 
 #pragma warning disable 169 // file contains unused fields. This is ok. 
@@ -60,9 +61,9 @@ Page 0, File header
 // todo         change PAGE_HEADER_LINK to 64bit
 // todo         add more options to the page status field (see below)
 // todo         improve read performance when VerifyOnRead is true by only reading the page once. 
-// todo         implement a better locking strategy for reading. Simultaneous I/O and multiple read. 
+// done         implement a better locking strategy for reading. Simultaneous I/O and multiple read.  (DONE! 2014-04-19)
 // todo         implement a stream reader cache
-// todo         implement a better locking strategy for writing. Write multiple pages in parallell, synchronize when chapter needs to be added.
+// done         implement a better locking strategy for writing. Write multiple pages in parallell, synchronize when chapter needs to be added. (DONE! 2014-04-19)
 // todo         implement asynchronous write (overlapped IO)
 // todo         implement ReadAt(uint handle, long position, byte[] buffer, int offset, int count)
 // todo         add a Minor File Version field to the file header. Minor version = non breaking changes. Major version = breaking changes.
@@ -125,7 +126,7 @@ namespace TinyFS
         private const UInt16 FILE_VERSION = 1;
         private const uint FILE_HEADER_PAGE_INDEX = 0;
 
-        private static readonly byte[] UINT_ZERO = new byte[]{0x0, 0x0, 0x0, 0x0};
+        private static readonly byte[] UintZero = new byte[]{0x0, 0x0, 0x0, 0x0};
         #endregion
 
         private Stream _stream;
@@ -139,7 +140,7 @@ namespace TinyFS
 
         public CompoundFile(string path, CompoundFileOptions options, IFileStreamFactory fileStreamFactory)
         {
-            Debug.Assert(UINT_ZERO.Length == sizeof(uint));
+            Debug.Assert(UintZero.Length == sizeof(uint));
             FileOptions foptions;
             if (options.UseWriteCache)
                 foptions = FileOptions.RandomAccess;
@@ -288,7 +289,7 @@ namespace TinyFS
                 {
                     var header = ReadPageHeader(handle);
                     header[PAGE_HEADER_INDEX_STATUS] = PAGE_STATUS_FREE;
-                    Buffer.BlockCopy(UINT_ZERO, 0, header, PAGE_HEADER_INDEX_DATA_LENGTH, sizeof(uint));
+                    Buffer.BlockCopy(UintZero, 0, header, PAGE_HEADER_INDEX_DATA_LENGTH, sizeof(uint));
                     uint ix = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_PAGE_LINK);
                     if (ix == NO_LINK_ID)
                     {
@@ -311,7 +312,7 @@ namespace TinyFS
             if (_stream.Length < handle * PAGE_SIZE) throw new IndexOutOfRangeException();
             if (handle == FILE_HEADER_PAGE_INDEX) throw new IOException("Invalid handle");
             var page = new byte[PAGE_DATA_SIZE];
-            lock(_sync)
+            using (LockManager.Instance.Get(handle, LockType.Write))
             {
                 byte[] header;
                 while (count > 0)
@@ -348,7 +349,7 @@ namespace TinyFS
                 if (BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_PAGE_LINK) != NO_LINK_ID)
                 {
                     var nextPage = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_PAGE_LINK);
-                    Buffer.BlockCopy(UINT_ZERO, 0, header, PAGE_HEADER_INDEX_PAGE_LINK, sizeof (uint));
+                    Buffer.BlockCopy(UintZero, 0, header, PAGE_HEADER_INDEX_PAGE_LINK, sizeof (uint));
                     WritePageHeader(handle, header);
                     WritePageCrc(handle);
                     Free(nextPage);
@@ -364,21 +365,27 @@ namespace TinyFS
             if (_stream.Length < handle * PAGE_SIZE) throw new IndexOutOfRangeException();
             if (handle == FILE_HEADER_PAGE_INDEX) throw new IOException("Invalid handle");
 
-            lock(_sync)
+            byte[] header;
+            uint length;
+            uint ix;
+            using (LockManager.Instance.Get(handle, LockType.Read))
             {
                 // calculate new total size and write to header
-                var header = ReadPageHeader(handle);
-                uint length = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_DATA_LENGTH);
+                header = ReadPageHeader(handle);
+                length = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_DATA_LENGTH);
                 length = position + count > length ? position + (uint)count : length;
                 Buffer.BlockCopy(BitConverter.GetBytes(length), 0, header, PAGE_HEADER_INDEX_DATA_LENGTH, sizeof(uint));
                 WritePageHeader(handle, header);
                 WritePageCrc(handle);
                 // figure out which page is the first to write to 
-                var ix = handle + (position / PAGE_SIZE);
+                ix = handle + (position / PAGE_SIZE);
                 position -= ix * PAGE_SIZE;
                 handle = ix;
-                length -= ix * PAGE_DATA_SIZE;
-                while (count > 0)
+                length -= ix * PAGE_DATA_SIZE;                    
+            }
+            while (count > 0)
+            {
+                using (LockManager.Instance.Get(handle, LockType.Write))
                 {
                     // write remaining byte count to current header
                     header = ReadPageHeader(handle);
@@ -398,7 +405,7 @@ namespace TinyFS
                     position = 0;
                     if (count > 0)
                     {
-                        _stream.Position = (handle*PAGE_SIZE) + PAGE_HEADER_INDEX_PAGE_LINK;
+                        _stream.Position = (handle * PAGE_SIZE) + PAGE_HEADER_INDEX_PAGE_LINK;
                         _stream.Read(buffer, 0, 4);
                         handle = BitConverter.ToUInt32(buffer, 0);
                         // is this the last page of the current file layout? If so, allocate a new page and link it!
@@ -413,10 +420,10 @@ namespace TinyFS
                     else
                     {
                         WritePageCrc(handle);
-                    }
-                }                
-                if (_options.FlushAtWrite) Flush(true);
-            }
+                    }                        
+                }
+            }                
+            if (_options.FlushAtWrite) Flush(true);
         }
 
         // not the most optimal as this could potentially return a 4 GB byte array.
@@ -432,9 +439,9 @@ namespace TinyFS
             if (count > int.MaxValue) throw new InvalidOperationException();
             var data = new byte[count];
             uint offset = 0;
-            lock(_sync)
+            while (count > 0)
             {
-                while (count > 0)
+                using (LockManager.Instance.Get(handle, LockType.Read))
                 {
                     if (_options.VerifyOnRead && !ValidatePageCrc(handle)) throw new InvalidDataException("Checksum verification failed. Corrupt data.");
                     _stream.Position = handle * PAGE_SIZE + PAGE_HEADER_SIZE;
@@ -445,12 +452,12 @@ namespace TinyFS
                     if (count > 0)
                     {
                         var buffer = new byte[4];
-                        _stream.Position = handle*PAGE_SIZE + PAGE_HEADER_INDEX_PAGE_LINK;
+                        _stream.Position = handle * PAGE_SIZE + PAGE_HEADER_INDEX_PAGE_LINK;
                         _stream.Read(buffer, 0, 4);
                         handle = BitConverter.ToUInt32(buffer, 0);
-                    }
-                }                
-            }
+                    }                        
+                }
+            }                
             return data;
         }
 
@@ -463,16 +470,19 @@ namespace TinyFS
             if (size < srcOffset) throw new IOException("index out of range");
             count = size < srcOffset + count ? size - srcOffset : count;
             uint pageCount = srcOffset/PAGE_DATA_SIZE;
-            lock(_sync)
+            while (pageCount > 0)
             {
-                while (pageCount > 0)
+                using (LockManager.Instance.Get(handle, LockType.Read))
                 {
                     header = ReadPageHeader(handle);
                     handle = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_PAGE_LINK);
-                    pageCount--;
+                    pageCount--;                        
                 }
-                uint totalReadBytes = 0;
-                while (count > 0)
+            }
+            uint totalReadBytes = 0;
+            while (count > 0)
+            {
+                using (LockManager.Instance.Get(handle, LockType.Read))
                 {
                     uint bytesToRead = PAGE_DATA_SIZE - srcOffset > count ? count : PAGE_DATA_SIZE - srcOffset;
                     _stream.Position = handle * PAGE_SIZE + PAGE_HEADER_SIZE + srcOffset;
@@ -488,15 +498,15 @@ namespace TinyFS
                         header = ReadPageHeader(handle);
                         handle = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_PAGE_LINK);
                     }
-                    totalReadBytes += actualReadBytes;
+                    totalReadBytes += actualReadBytes;                        
                 }
-                return totalReadBytes;                
             }
+            return totalReadBytes;                
         }
 
         public uint GetLength(uint handle)
         {
-            lock(_sync)
+            using (LockManager.Instance.Get(handle, LockType.Read))
             {
                 var header = ReadPageHeader(handle);
                 return BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_DATA_LENGTH);
@@ -582,7 +592,7 @@ namespace TinyFS
         {
             byte[] data = new byte[PAGE_SIZE-4];
             byte[] pageCrc = new byte[4];
-            lock (_sync)
+            using (LockManager.Instance.Get(ix, LockType.Read))
             {
                 _stream.Position = ix * PAGE_SIZE;
                 _stream.Read(data, 0, PAGE_SIZE - 4);
@@ -690,7 +700,7 @@ namespace TinyFS
                     Buffer.BlockCopy(crc, 0, data, Convert.ToInt32(PAGE_SIZE*i + PAGE_FOOTER_INDEX_CRC), 4);
                 }
                 // last page has no page link. fix and update crc.
-                Buffer.BlockCopy(UINT_ZERO, 0, data, (CHAPTER_SIZE - 1) * PAGE_SIZE + PAGE_HEADER_INDEX_PAGE_LINK, sizeof(uint));
+                Buffer.BlockCopy(UintZero, 0, data, (CHAPTER_SIZE - 1) * PAGE_SIZE + PAGE_HEADER_INDEX_PAGE_LINK, sizeof(uint));
                 crc = BitConverter.GetBytes(Win32Crc.GetCrc(data, (CHAPTER_SIZE - 1) * PAGE_SIZE, PAGE_SIZE-4));
                 Buffer.BlockCopy(crc, 0, data, (CHAPTER_SIZE - 1) * PAGE_SIZE + PAGE_FOOTER_INDEX_CRC, 4);
                 // figure out the correct stream position for where to write our new chapter
