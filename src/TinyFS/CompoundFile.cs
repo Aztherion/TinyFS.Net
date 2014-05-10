@@ -64,7 +64,7 @@ Page 0, File header
 // done         implement a better locking strategy for reading. Simultaneous I/O and multiple read.  (DONE! 2014-04-19)
 // todo         implement a stream reader cache
 // done         implement a better locking strategy for writing. Write multiple pages in parallell, synchronize when chapter needs to be added. (DONE! 2014-04-19)
-// todo         implement asynchronous write (overlapped IO)
+// done         implement asynchronous write (overlapped IO)
 // todo         implement ReadAt(uint handle, long position, byte[] buffer, int offset, int count)
 // todo         add a Minor File Version field to the file header. Minor version = non breaking changes. Major version = breaking changes.
 // todo         add a status field to page header that indicates that the content exists but is unavailable (syncing)
@@ -101,10 +101,16 @@ namespace TinyFS
 {
     public class CompoundFile : IDisposable
     {
+        [Flags]
+        private enum PageInfoMask : byte
+        {
+            Free = 1,
+            Encypted = 2,
+            ReadOnly = 4
+        }
+
         #region Constants
         private const uint NO_LINK_ID = 0;
-        private const byte PAGE_STATUS_FREE = 1;
-        private const byte PAGE_STATUS_ALLOCATED = 0;
         private const byte PAGE_HEADER_SIZE = 9;
         private const byte PAGE_FOOTER_SIZE = 4;
 
@@ -125,6 +131,11 @@ namespace TinyFS
         private const string MAGIC_STRING = "UNICORNS 4-LIFE";
         private const UInt16 FILE_VERSION = 1;
         private const uint FILE_HEADER_PAGE_INDEX = 0;
+        // calculated for 128 bit Rijndael
+        // 4080 = 4079 + 16 - (4079 MOD 16)
+        // 4096 = 4080 + 16 - (4080 MOD 16)
+        // 4096 > PAGE_DATA_SIZE > 4080
+        private const uint PLAINTEXT_MAX_BLOCKSIZE = 4079;
 
         private static readonly byte[] UintZero = new byte[]{0x0, 0x0, 0x0, 0x0};
         #endregion
@@ -184,7 +195,8 @@ namespace TinyFS
                     freepageIx = (_header.ChapterCount - 1) * CHAPTER_SIZE;
                 }
                 _header.FirstFreePage = freepageIx;
-                header[0] = PAGE_STATUS_ALLOCATED;
+                header[0] ^= (byte) PageInfoMask.Free;
+
                 Buffer.BlockCopy(BitConverter.GetBytes(NO_LINK_ID), 0, header, 1, sizeof (uint));
                 WritePageHeader(ix, header);
                 WriteFileHeader();
@@ -218,7 +230,8 @@ namespace TinyFS
             lock(_sync)
             {
                 var header = ReadPageHeader(index);
-                if (header[PAGE_HEADER_INDEX_STATUS] != PAGE_STATUS_FREE) throw new IOException("page is not free");
+                if ((header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Free) != (byte)PageInfoMask.Free) throw new IOException("page is not free");
+                //if (header[PAGE_HEADER_INDEX_STATUS] != PAGE_STATUS_FREE) throw new IOException("page is not free");
 
                 // special handle if index = first freepage
                 if (_header.FirstFreePage == index)
@@ -252,7 +265,8 @@ namespace TinyFS
                     if (prevIx == index) break;
 
                 }
-                header[PAGE_HEADER_INDEX_PAGE_LINK] = PAGE_STATUS_ALLOCATED;
+                header[PAGE_HEADER_INDEX_PAGE_LINK] ^=(byte)PageInfoMask.Free;
+                //header[PAGE_HEADER_INDEX_PAGE_LINK] = PAGE_STATUS_ALLOCATED;
                 Buffer.BlockCopy(BitConverter.GetBytes(size), 0, header, PAGE_HEADER_SIZE, sizeof(uint));
                 WritePageHeader(index, header);
                 // set page header status
@@ -288,7 +302,7 @@ namespace TinyFS
                 while (handle != NO_LINK_ID)
                 {
                     var header = ReadPageHeader(handle);
-                    header[PAGE_HEADER_INDEX_STATUS] = PAGE_STATUS_FREE;
+                    header[PAGE_HEADER_INDEX_STATUS] |= (byte)PageInfoMask.Free;
                     Buffer.BlockCopy(UintZero, 0, header, PAGE_HEADER_INDEX_DATA_LENGTH, sizeof(uint));
                     uint ix = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_PAGE_LINK);
                     if (ix == NO_LINK_ID)
@@ -426,15 +440,14 @@ namespace TinyFS
             if (_options.FlushAtWrite) Flush(true);
         }
 
-        // not the most optimal as this could potentially return a 4 GB byte array.
-        // add support for Read(handle, dstbuffer, dstoffset, count, srcOffset)
         public byte[] ReadAll(uint handle)
         {
             if (_stream == null) throw new ObjectDisposedException(GetType().FullName);
             if (_stream.Length < handle * PAGE_SIZE) throw new IndexOutOfRangeException();
             if (handle == FILE_HEADER_PAGE_INDEX) throw new IOException("Invalid handle");
             var header = ReadPageHeader(handle);
-            if (header[PAGE_HEADER_INDEX_STATUS] == PAGE_STATUS_FREE) throw new IOException("handle is unallocated");
+            if ((header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Free) == (byte)PageInfoMask.Free) throw new IOException("handle is unallocated");
+            //if (header[PAGE_HEADER_INDEX_STATUS] == PAGE_STATUS_FREE) throw new IOException("handle is unallocated");
             uint count = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_DATA_LENGTH);
             if (count > int.MaxValue) throw new InvalidOperationException();
             var data = new byte[count];
@@ -464,7 +477,8 @@ namespace TinyFS
         public uint ReadAt(uint handle, byte[] buffer, uint srcOffset, uint count)
         {
             var header = ReadPageHeader(handle);
-            if (header[PAGE_HEADER_INDEX_STATUS] != PAGE_STATUS_ALLOCATED) throw new IOException("invalid handle");
+            if ((header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Free) == (byte)PageInfoMask.Free) throw new IOException("invalid handle");
+            //if (header[PAGE_HEADER_INDEX_STATUS] != PAGE_STATUS_ALLOCATED) throw new IOException("invalid handle");
             if (buffer.Length < count) throw new Exception("buffer not large enough for the data requested.");
             var size = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_DATA_LENGTH);
             if (size < srcOffset) throw new IOException("index out of range");
@@ -693,7 +707,7 @@ namespace TinyFS
                 byte[] crc;
                 for (uint i = 0; i < CHAPTER_SIZE; i++)
                 {
-                    data[PAGE_SIZE * i] = PAGE_STATUS_FREE;
+                    data[PAGE_SIZE*i] |= (byte) PageInfoMask.Free;
                     uint nextFreePage = _header.ChapterCount*CHAPTER_SIZE + i + 1;
                     Buffer.BlockCopy(BitConverter.GetBytes(nextFreePage), 0, data, Convert.ToInt32(PAGE_SIZE * i + 1), sizeof(uint));
                     crc = BitConverter.GetBytes(Win32Crc.GetCrc(data, (int)(PAGE_SIZE*i), PAGE_SIZE - 4)); // calculate crc on all but the last 4 bytes as that is where we store the crc value
