@@ -6,10 +6,13 @@
     <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/d:Locking/f:LockManager.cs" caret="2167" fromTop="45" />
     <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/d:Locking/f:Lock.cs" caret="2128" fromTop="82" />
     <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/d:Locking/f:ILock.cs" caret="35" fromTop="2" />
-    <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/d:Properties/f:AssemblyInfo.cs" caret="1055" fromTop="8" />
     <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/f:EmbeddedStorage.cs" caret="0" fromTop="0" />
     <File id="F192367F-C6D5-45A7-875A-8A6CFEB8162E/f:CompoundFileTest.cs" caret="3916" fromTop="12" />
-    <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/f:CompoundFile.cs" caret="0" fromTop="0" />
+    <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/f:Crc.cs" caret="4134" fromTop="19" />
+    <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/f:FileStreamFactory.cs" caret="0" fromTop="0" />
+    <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/d:Properties/f:AssemblyInfo.cs" caret="1367" fromTop="10" />
+    <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/f:Win32.cs" caret="918" fromTop="8" />
+    <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/f:CompoundFile.cs" caret="6728" fromTop="27" />
   </RecentFiles>
   <RecentEdits>
     <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/d:Locking/f:ILock.cs" caret="35" fromTop="2" />
@@ -18,7 +21,8 @@
     <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/d:Locking/f:LockType.cs" caret="20" fromTop="0" />
     <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/d:Locking/f:ReadLock.cs" caret="26" fromTop="1" />
     <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/d:Locking/f:WriteLock.cs" caret="26" fromTop="1" />
-    <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/d:Properties/f:AssemblyInfo.cs" caret="1367" fromTop="18" />
-    <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/f:CompoundFile.cs" caret="12290" fromTop="33" />
+    <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/f:Crc.cs" caret="753" fromTop="5" />
+    <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/d:Properties/f:AssemblyInfo.cs" caret="1367" fromTop="10" />
+    <File id="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8/f:CompoundFile.cs" caret="6728" fromTop="27" />
   </RecentEdits>
 </RecentFiles>

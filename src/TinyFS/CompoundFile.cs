@@ -125,7 +125,7 @@ namespace TinyFS
         private const byte PAGE_HEADER_INDEX_DATA_LENGTH = 5;
         private const UInt16 PAGE_FOOTER_INDEX_CRC = PAGE_SIZE - 4;
         private const UInt16 PAGE_SIZE = 4096;
-        private const UInt16 PAGE_DATA_SIZE = PAGE_SIZE - PAGE_HEADER_SIZE - PAGE_FOOTER_SIZE;
+        private const UInt16 PAGE_DATA_SIZE = PAGE_SIZE - PAGE_HEADER_SIZE - PAGE_FOOTER_SIZE; // 4083
         private const UInt16 CHAPTER_SIZE = 4096;
         private const uint MAX_PAGE_COUNT = uint.MaxValue;
         private const string MAGIC_STRING = "UNICORNS 4-LIFE";
@@ -135,7 +135,8 @@ namespace TinyFS
         // 4080 = 4079 + 16 - (4079 MOD 16)
         // 4096 = 4080 + 16 - (4080 MOD 16)
         // 4096 > PAGE_DATA_SIZE > 4080
-        private const uint PLAINTEXT_MAX_BLOCKSIZE = 4079;
+        private const uint PLAINTEXT_MAX_PAGE_DATA_SIZE = 4079;
+        private const uint PAGE_SALT_SIZE = 3; // PAGE_DATA_SIZE - ENCRYPTED_DATA_SIZE
 
         private static readonly byte[] UintZero = new byte[]{0x0, 0x0, 0x0, 0x0};
         #endregion
