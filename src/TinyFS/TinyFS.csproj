@@ -74,12 +74,7 @@
     <Compile Include="Toc.cs" />
     <Compile Include="TocEntry.cs" />
     <Compile Include="Win32.cs" />
-    <Compile Include="Win32Crc.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="Win32Crc.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <Compile Include="Crc.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

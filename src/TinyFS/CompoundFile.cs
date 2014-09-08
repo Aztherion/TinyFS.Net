@@ -572,7 +572,7 @@ namespace TinyFS
             _stream.Position = ix*PAGE_SIZE;
             var data = new byte[PAGE_SIZE];
             _stream.Read(data, 0, PAGE_SIZE);
-            var crc = Win32Crc.GetCrc(data, 0, PAGE_SIZE - 4);
+            var crc = Crc.GetCrc(data, 0, PAGE_SIZE - 4);
             _stream.Position = (ix*PAGE_SIZE) + PAGE_FOOTER_INDEX_CRC;
             _stream.Write(BitConverter.GetBytes(crc), 0, sizeof(uint));
         }
@@ -612,7 +612,7 @@ namespace TinyFS
                 _stream.Read(data, 0, PAGE_SIZE - 4);
                 _stream.Read(pageCrc, 0, 4);
             }
-            var actualCrc = BitConverter.GetBytes(Win32Crc.GetCrc(data, 0, PAGE_SIZE-4));
+            var actualCrc = BitConverter.GetBytes(Crc.GetCrc(data, 0, PAGE_SIZE-4));
             for(int i=0;i<4;i++)
             {
                 if (pageCrc[i] != actualCrc[i]) return false;
@@ -686,7 +686,7 @@ namespace TinyFS
                 Buffer.BlockCopy(BitConverter.GetBytes(PAGE_SIZE), 0, data, FILE_HEADER_INDEX_PAGESIZE, sizeof(UInt16));
                 Buffer.BlockCopy(BitConverter.GetBytes(CHAPTER_SIZE), 0, data, FILE_HEADER_INDEX_CHAPTERSIZE, sizeof(UInt16));
                 Buffer.BlockCopy(BitConverter.GetBytes(firstFreePageIndex), 0, data, FILE_HEADER_INDEX_FIRST_FREEPAGE, sizeof(uint));
-                var crc = Win32Crc.GetCrc(data, 0, PAGE_SIZE - 4);
+                var crc = Crc.GetCrc(data, 0, PAGE_SIZE - 4);
                 Buffer.BlockCopy(BitConverter.GetBytes(crc), 0, data, PAGE_SIZE - 4, 4);
                 _stream.Position = 0;
                 _stream.Write(data, 0, data.Length);
@@ -710,12 +710,12 @@ namespace TinyFS
                     data[PAGE_SIZE*i] |= (byte) PageInfoMask.Free;
                     uint nextFreePage = _header.ChapterCount*CHAPTER_SIZE + i + 1;
                     Buffer.BlockCopy(BitConverter.GetBytes(nextFreePage), 0, data, Convert.ToInt32(PAGE_SIZE * i + 1), sizeof(uint));
-                    crc = BitConverter.GetBytes(Win32Crc.GetCrc(data, (int)(PAGE_SIZE*i), PAGE_SIZE - 4)); // calculate crc on all but the last 4 bytes as that is where we store the crc value
+                    crc = BitConverter.GetBytes(Crc.GetCrc(data, (int)(PAGE_SIZE*i), PAGE_SIZE - 4)); // calculate crc on all but the last 4 bytes as that is where we store the crc value
                     Buffer.BlockCopy(crc, 0, data, Convert.ToInt32(PAGE_SIZE*i + PAGE_FOOTER_INDEX_CRC), 4);
                 }
                 // last page has no page link. fix and update crc.
                 Buffer.BlockCopy(UintZero, 0, data, (CHAPTER_SIZE - 1) * PAGE_SIZE + PAGE_HEADER_INDEX_PAGE_LINK, sizeof(uint));
-                crc = BitConverter.GetBytes(Win32Crc.GetCrc(data, (CHAPTER_SIZE - 1) * PAGE_SIZE, PAGE_SIZE-4));
+                crc = BitConverter.GetBytes(Crc.GetCrc(data, (CHAPTER_SIZE - 1) * PAGE_SIZE, PAGE_SIZE-4));
                 Buffer.BlockCopy(crc, 0, data, (CHAPTER_SIZE - 1) * PAGE_SIZE + PAGE_FOOTER_INDEX_CRC, 4);
                 // figure out the correct stream position for where to write our new chapter
                 _stream.Position = _header.ChapterCount*CHAPTER_SIZE * PAGE_SIZE;
