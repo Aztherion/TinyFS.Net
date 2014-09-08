@@ -1,0 +1,4 @@
+<Modules>
+  <Module PersistentId="C320D2D3-486C-4D9B-AB8F-EBE6E239D1D8" ModuleId="TinyFS" />
+  <Module PersistentId="F192367F-C6D5-45A7-875A-8A6CFEB8162E" ModuleId="TinyFS.Test" />
+</Modules>
