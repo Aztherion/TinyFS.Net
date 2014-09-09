@@ -1,8 +1,0 @@
-C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\x86\Debug\Win32Crc.dll
-C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\x86\Debug\TinyFS.Test.dll
-C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\x86\Debug\TinyFS.Test.pdb
-C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\x86\Debug\TinyFS.dll
-C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\bin\x86\Debug\TinyFS.pdb
-C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\obj\x86\Debug\TinyFS.Test.csprojResolveAssemblyReference.cache
-C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\obj\x86\Debug\TinyFS.Test.dll
-C:\Users\BON\Documents\GitHub\TinyFS.Net\src\TinyFS.Test\obj\x86\Debug\TinyFS.Test.pdb
