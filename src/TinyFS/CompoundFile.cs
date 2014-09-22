@@ -15,6 +15,9 @@
 using System;
 using System.IO;
 using System.Diagnostics;
+using System.Security;
+using System.Security.Cryptography;
+using System.Text;
 using TinyFS.Locking;
 
 
@@ -119,6 +122,7 @@ namespace TinyFS
         private const byte FILE_HEADER_INDEX_PAGESIZE = 52;
         private const byte FILE_HEADER_INDEX_CHAPTERSIZE = 54;
         private const byte FILE_HEADER_INDEX_FIRST_FREEPAGE = 60;
+        
 
         private const byte PAGE_HEADER_INDEX_STATUS = 0;    // for future use
         private const byte PAGE_HEADER_INDEX_PAGE_LINK = 1;
@@ -132,11 +136,15 @@ namespace TinyFS
         private const UInt16 FILE_VERSION = 1;
         private const uint FILE_HEADER_PAGE_INDEX = 0;
         // calculated for 128 bit Rijndael
-        // 4080 = 4079 + 16 - (4079 MOD 16)
+        // 4064 = 4063 + 16 - (4063 MOD 16)
         // 4096 = 4080 + 16 - (4080 MOD 16)
-        // 4096 > PAGE_DATA_SIZE > 4080
-        private const uint PLAINTEXT_MAX_PAGE_DATA_SIZE = 4079;
-        private const uint PAGE_SALT_SIZE = 3; // PAGE_DATA_SIZE - ENCRYPTED_DATA_SIZE
+        // 4096 > PAGE_DATA_SIZE > 4064
+        private const UInt16 ENCRYPTION_PLAINTEXT_MAX_SIZE = 4063;
+        private const UInt16 ENCRYPTION_DATA_START_INDEX = 4;
+        private const UInt16 ENCRYPTION_DATA_LENGTH_INDEX = 0;
+        // On encrypted pages, the first 4 bytes of data is the length of the encrypted data. 
+        // The length-field in the header is the length of the decrypted data.
+
 
         private static readonly byte[] UintZero = new byte[]{0x0, 0x0, 0x0, 0x0};
         #endregion
@@ -146,6 +154,8 @@ namespace TinyFS
         private readonly FileHeader _header = new FileHeader();
         private readonly CompoundFileOptions _options;
         private bool _disposed;
+        private byte[] _key;
+        private byte[] _iv;
 
         public CompoundFile(string path) : this(path, new CompoundFileOptions()) { }
         public CompoundFile(string path, CompoundFileOptions options) : this(path, options, new FileStreamFactory()) { }
@@ -174,6 +184,10 @@ namespace TinyFS
                     InitializeFile();
                 }            
             }
+            if (options.UseEncryption)
+            {
+                InitializeEncryption();
+            }
         }
 
         // one of the few exceptions to the "don't ever, ever write your own finalizer!"-rule. 
@@ -196,7 +210,7 @@ namespace TinyFS
                     freepageIx = (_header.ChapterCount - 1) * CHAPTER_SIZE;
                 }
                 _header.FirstFreePage = freepageIx;
-                header[0] ^= (byte) PageInfoMask.Free;
+                header[PAGE_HEADER_INDEX_STATUS] ^= (byte) PageInfoMask.Free;
 
                 Buffer.BlockCopy(BitConverter.GetBytes(NO_LINK_ID), 0, header, 1, sizeof (uint));
                 WritePageHeader(ix, header);
@@ -304,6 +318,10 @@ namespace TinyFS
                 {
                     var header = ReadPageHeader(handle);
                     header[PAGE_HEADER_INDEX_STATUS] |= (byte)PageInfoMask.Free;
+                    if ((header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Encypted) != (byte)PageInfoMask.Encypted)
+                    {
+                        header[PAGE_HEADER_INDEX_STATUS] ^= (byte)PageInfoMask.Encypted;
+                    }
                     Buffer.BlockCopy(UintZero, 0, header, PAGE_HEADER_INDEX_DATA_LENGTH, sizeof(uint));
                     uint ix = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_PAGE_LINK);
                     if (ix == NO_LINK_ID)
@@ -326,6 +344,9 @@ namespace TinyFS
             if (_stream == null) throw new ObjectDisposedException(GetType().FullName);
             if (_stream.Length < handle * PAGE_SIZE) throw new IndexOutOfRangeException();
             if (handle == FILE_HEADER_PAGE_INDEX) throw new IOException("Invalid handle");
+            
+            var pageDataSize = _options.UseEncryption ? ENCRYPTION_PLAINTEXT_MAX_SIZE : PAGE_DATA_SIZE;
+
             var page = new byte[PAGE_DATA_SIZE];
             using (LockManager.Instance.Get(handle, LockType.Write))
             {
@@ -334,13 +355,40 @@ namespace TinyFS
                 {
                     header = ReadPageHeader(handle);
                     Buffer.BlockCopy(BitConverter.GetBytes((uint)count), 0, header, PAGE_HEADER_INDEX_DATA_LENGTH, sizeof(uint));
+                    if (_options.UseEncryption)
+                    {
+                        if ((header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Encypted) != (byte)PageInfoMask.Encypted)
+                        {
+                            header[PAGE_HEADER_INDEX_STATUS] ^= (byte) PageInfoMask.Encypted;        
+                        }
+                    } else
+                    {
+                        header[PAGE_HEADER_INDEX_STATUS] |= (byte)PageInfoMask.Encypted;
+                    }
                     WritePageHeader(handle, header);
-                    int ic = count > PAGE_DATA_SIZE ? PAGE_DATA_SIZE : count;
-                    Buffer.BlockCopy(data, offset, page, 0, ic);
-                    _stream.Position = (handle * PAGE_SIZE) + PAGE_HEADER_SIZE;
-                    _stream.Write(page, 0, ic);
+
+                    var ic = count > pageDataSize ? pageDataSize : count;
+
+                    if (_options.UseEncryption)
+                    {
+                        var plaintext = new byte[ic];
+                        Buffer.BlockCopy(data, offset, plaintext, 0, ic);
+                        var encrypted = Encrypt(plaintext);
+                        if (encrypted.Length > PAGE_DATA_SIZE) throw new Exception("Encrypted data too large to fit page size");
+                        _stream.Position = (handle*PAGE_SIZE) + PAGE_HEADER_SIZE + ENCRYPTION_DATA_LENGTH_INDEX;
+                        _stream.Write(BitConverter.GetBytes(encrypted.Length), 0, sizeof(uint));
+                        _stream.Position = (handle*PAGE_SIZE) + PAGE_HEADER_SIZE + ENCRYPTION_DATA_START_INDEX;
+                        _stream.Write(encrypted, 0, encrypted.Length);
+                    } else
+                    {
+                        Buffer.BlockCopy(data, offset, page, 0, ic);
+                        _stream.Position = (handle * PAGE_SIZE) + PAGE_HEADER_SIZE;
+                        _stream.Write(page, 0, ic);
+                    }
+
                     offset += ic;
                     count -= ic;
+
                     if (count > 0)
                     {
                         if (BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_PAGE_LINK) == NO_LINK_ID)
@@ -375,6 +423,10 @@ namespace TinyFS
 
         public void WriteAt(uint handle, uint position, byte[] data, int offset, int count)
         {
+            if (_options.UseEncryption)
+            {
+                throw new NotImplementedException("WriteAt not implemented for encrypted storage");
+            }
             if (data.Length < offset + count) throw new IndexOutOfRangeException();
             if (_stream == null) throw new ObjectDisposedException(GetType().FullName);
             if (_stream.Length < handle * PAGE_SIZE) throw new IndexOutOfRangeException();
@@ -448,6 +500,7 @@ namespace TinyFS
             if (handle == FILE_HEADER_PAGE_INDEX) throw new IOException("Invalid handle");
             var header = ReadPageHeader(handle);
             if ((header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Free) == (byte)PageInfoMask.Free) throw new IOException("handle is unallocated");
+            if ((header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Encypted) == (byte)PageInfoMask.Encypted && !_options.UseEncryption) throw new InvalidOperationException("Page is encrypted");
             //if (header[PAGE_HEADER_INDEX_STATUS] == PAGE_STATUS_FREE) throw new IOException("handle is unallocated");
             uint count = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_DATA_LENGTH);
             if (count > int.MaxValue) throw new InvalidOperationException();
@@ -459,17 +512,31 @@ namespace TinyFS
                 {
                     if (_options.VerifyOnRead && !ValidatePageCrc(handle)) throw new InvalidDataException("Checksum verification failed. Corrupt data.");
                     _stream.Position = handle * PAGE_SIZE + PAGE_HEADER_SIZE;
-                    uint ic = count > PAGE_DATA_SIZE ? PAGE_DATA_SIZE : count;
-                    _stream.Read(data, (int)offset, (int)ic);
-                    offset += ic;
-                    count -= ic;
+
+                    if (_options.UseEncryption)
+                    {
+                        var page = new byte[PAGE_DATA_SIZE];
+                        _stream.Read(page, 0, PAGE_DATA_SIZE);
+                        var encryptedLength = BitConverter.ToInt32(page, ENCRYPTION_DATA_LENGTH_INDEX);
+                        var plaintext = Decrypt(page, ENCRYPTION_DATA_START_INDEX, encryptedLength);
+                        Buffer.BlockCopy(plaintext, 0, data, (int)offset, plaintext.Length);
+                        offset += (uint)plaintext.Length;
+                        count -= (uint)plaintext.Length;
+                    }
+                    else
+                    {
+                        uint ic = count > PAGE_DATA_SIZE ? PAGE_DATA_SIZE : count;
+                        _stream.Read(data, (int)offset, (int)ic);
+                        offset += ic;
+                        count -= ic;
+                    }
                     if (count > 0)
                     {
                         var buffer = new byte[4];
                         _stream.Position = handle * PAGE_SIZE + PAGE_HEADER_INDEX_PAGE_LINK;
                         _stream.Read(buffer, 0, 4);
                         handle = BitConverter.ToUInt32(buffer, 0);
-                    }                        
+                    }
                 }
             }                
             return data;
@@ -560,6 +627,77 @@ namespace TinyFS
             for (uint ix = 0; ix < _header.ChapterCount * CHAPTER_SIZE; ix++)
                 if (!ValidatePageCrc(ix)) return false;
             return true;
+        }
+
+        private void InitializeEncryption()
+        {
+            if (string.IsNullOrEmpty(_options.Password) || _options.Password.Length < 1) throw new SecurityException("Password empty or too short.");
+            
+            var salt = new byte[8];
+            var pwdBytes = Encoding.Default.GetBytes(_options.Password);
+            
+            for (var i = 0; i < salt.Length; i++)
+            {
+                salt[i] = (byte)(pwdBytes[i % pwdBytes.Length] ^ pwdBytes.Length - i);
+            }
+
+            var pwdGen = new Rfc2898DeriveBytes(pwdBytes, salt, 1000);
+
+            using (var rijndaelManaged = new RijndaelManaged())
+            {
+                rijndaelManaged.BlockSize = 128;
+
+                _key = pwdGen.GetBytes(rijndaelManaged.KeySize / 8);
+                _iv = pwdGen.GetBytes(rijndaelManaged.BlockSize / 8);
+            }
+
+            // clear password to avoid leaking it through memory inspection
+            // could probably leak through the RijndaelMananged object but that's 
+            // beyond our responsibility..
+            _options.Password = string.Empty; 
+            for (var i = 0; i < pwdBytes.Length; i++) pwdBytes[i] = 0x0;
+        }
+
+        private byte[] Encrypt(byte[] data)
+        {
+            if (data.Length > ENCRYPTION_PLAINTEXT_MAX_SIZE) throw new ArgumentException("plaintext data too long", "plainText");
+
+            using (var rijndaelManaged = new RijndaelManaged())
+            {
+                rijndaelManaged.BlockSize = 128;
+                rijndaelManaged.Key = _key;
+                rijndaelManaged.IV = _iv;
+
+                using (var ms = new MemoryStream())
+                {
+                    using (var cs = new CryptoStream(ms, rijndaelManaged.CreateEncryptor(), CryptoStreamMode.Write))
+                    {
+                        cs.Write(data, 0, data.Length);
+                    }
+                    return ms.ToArray();
+                }                
+            }
+        }
+
+        private byte[] Decrypt(byte[] data, int index, int count)
+        {
+            using (var rijndaelManaged = new RijndaelManaged())
+            {
+                rijndaelManaged.BlockSize = 128;
+                rijndaelManaged.Key = _key;
+                rijndaelManaged.IV = _iv;
+                using (var ms = new MemoryStream(data, index, count))
+                {
+                    using (var cs = new CryptoStream(ms, rijndaelManaged.CreateDecryptor(), CryptoStreamMode.Read))
+                    {
+                        var buffer = new byte[PAGE_DATA_SIZE];
+                        int i = cs.Read(buffer, 0, PAGE_DATA_SIZE);
+                        var ret = new byte[i];
+                        Buffer.BlockCopy(buffer, 0, ret, 0, i);
+                        return ret;
+                    }
+                }
+            }
         }
 
         private void WritePageLink(uint ix, uint linkIx)
@@ -800,6 +938,8 @@ namespace TinyFS
             public bool VerifyOnRead { get; private set; }
             public bool UseWriteCache { get; set; }
             public bool FlushAtWrite { get; set; }
+            public bool UseEncryption { get; set; }
+            public string Password { get; set; }
             public int BufferSize { get; set; }
 
             public CompoundFileOptions()
@@ -807,6 +947,8 @@ namespace TinyFS
                 VerifyOnRead = false;
                 UseWriteCache = true;
                 FlushAtWrite = false;
+                UseEncryption = false;
+                Password = string.Empty;
                 BufferSize = 4096;
             }
         }
