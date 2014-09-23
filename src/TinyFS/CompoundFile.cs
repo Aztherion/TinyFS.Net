@@ -149,7 +149,7 @@ namespace TinyFS
         private static readonly byte[] UintZero = new byte[]{0x0, 0x0, 0x0, 0x0};
         #endregion
 
-        private Stream _stream;
+        private Stream _writeStream;
         private readonly object _sync = new object();
         private readonly FileHeader _header = new FileHeader();
         private readonly CompoundFileOptions _options;
@@ -172,7 +172,7 @@ namespace TinyFS
             bool fileExists = File.Exists(path);
             lock (_sync)
             {
-                _stream = fileStreamFactory.Create(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, options.BufferSize, foptions);
+                _writeStream = fileStreamFactory.Create(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, options.BufferSize, foptions);
                 if (!TryLoadFileHeader())
                 {
                     if (fileExists)
@@ -308,8 +308,8 @@ namespace TinyFS
 
         public void Free(uint handle)
         {
-            if (_stream == null) throw new ObjectDisposedException(GetType().FullName);
-            if (_stream.Length < handle * PAGE_SIZE) throw new IndexOutOfRangeException("handle must refer to an actual handle in the file");
+            if (_writeStream == null) throw new ObjectDisposedException(GetType().FullName);
+            if (_writeStream.Length < handle * PAGE_SIZE) throw new IndexOutOfRangeException("handle must refer to an actual handle in the file");
             if (handle == FILE_HEADER_PAGE_INDEX) throw new IOException("Invalid handle");
             uint orghandle = handle;
             lock(_sync)
@@ -341,8 +341,8 @@ namespace TinyFS
         public void Write(uint handle, byte[] data, int offset, int count)
         {
             if (data.Length < offset + count) throw new IndexOutOfRangeException();
-            if (_stream == null) throw new ObjectDisposedException(GetType().FullName);
-            if (_stream.Length < handle * PAGE_SIZE) throw new IndexOutOfRangeException();
+            if (_writeStream == null) throw new ObjectDisposedException(GetType().FullName);
+            if (_writeStream.Length < handle * PAGE_SIZE) throw new IndexOutOfRangeException();
             if (handle == FILE_HEADER_PAGE_INDEX) throw new IOException("Invalid handle");
             
             var pageDataSize = _options.UseEncryption ? ENCRYPTION_PLAINTEXT_MAX_SIZE : PAGE_DATA_SIZE;
@@ -375,15 +375,15 @@ namespace TinyFS
                         Buffer.BlockCopy(data, offset, plaintext, 0, ic);
                         var encrypted = Encrypt(plaintext);
                         if (encrypted.Length > PAGE_DATA_SIZE) throw new Exception("Encrypted data too large to fit page size");
-                        _stream.Position = (handle*PAGE_SIZE) + PAGE_HEADER_SIZE + ENCRYPTION_DATA_LENGTH_INDEX;
-                        _stream.Write(BitConverter.GetBytes(encrypted.Length), 0, sizeof(uint));
-                        _stream.Position = (handle*PAGE_SIZE) + PAGE_HEADER_SIZE + ENCRYPTION_DATA_START_INDEX;
-                        _stream.Write(encrypted, 0, encrypted.Length);
+                        _writeStream.Position = (handle*PAGE_SIZE) + PAGE_HEADER_SIZE + ENCRYPTION_DATA_LENGTH_INDEX;
+                        _writeStream.Write(BitConverter.GetBytes(encrypted.Length), 0, sizeof(uint));
+                        _writeStream.Position = (handle*PAGE_SIZE) + PAGE_HEADER_SIZE + ENCRYPTION_DATA_START_INDEX;
+                        _writeStream.Write(encrypted, 0, encrypted.Length);
                     } else
                     {
                         Buffer.BlockCopy(data, offset, page, 0, ic);
-                        _stream.Position = (handle * PAGE_SIZE) + PAGE_HEADER_SIZE;
-                        _stream.Write(page, 0, ic);
+                        _writeStream.Position = (handle * PAGE_SIZE) + PAGE_HEADER_SIZE;
+                        _writeStream.Write(page, 0, ic);
                     }
 
                     offset += ic;
@@ -428,8 +428,8 @@ namespace TinyFS
                 throw new NotImplementedException("WriteAt not implemented for encrypted storage");
             }
             if (data.Length < offset + count) throw new IndexOutOfRangeException();
-            if (_stream == null) throw new ObjectDisposedException(GetType().FullName);
-            if (_stream.Length < handle * PAGE_SIZE) throw new IndexOutOfRangeException();
+            if (_writeStream == null) throw new ObjectDisposedException(GetType().FullName);
+            if (_writeStream.Length < handle * PAGE_SIZE) throw new IndexOutOfRangeException();
             if (handle == FILE_HEADER_PAGE_INDEX) throw new IOException("Invalid handle");
 
             byte[] header;
@@ -464,16 +464,16 @@ namespace TinyFS
                     ic -= (int)position;
                     var buffer = new byte[PAGE_DATA_SIZE - position];
                     Buffer.BlockCopy(data, offset, buffer, 0, ic);
-                    _stream.Position = handle * PAGE_SIZE + PAGE_HEADER_SIZE + position;
-                    _stream.Write(buffer, 0, ic);
+                    _writeStream.Position = handle * PAGE_SIZE + PAGE_HEADER_SIZE + position;
+                    _writeStream.Write(buffer, 0, ic);
                     count -= ic;
                     offset += ic;
                     length -= (uint)ic;
                     position = 0;
                     if (count > 0)
                     {
-                        _stream.Position = (handle * PAGE_SIZE) + PAGE_HEADER_INDEX_PAGE_LINK;
-                        _stream.Read(buffer, 0, 4);
+                        _writeStream.Position = (handle * PAGE_SIZE) + PAGE_HEADER_INDEX_PAGE_LINK;
+                        _writeStream.Read(buffer, 0, 4);
                         handle = BitConverter.ToUInt32(buffer, 0);
                         // is this the last page of the current file layout? If so, allocate a new page and link it!
                         if (handle == NO_LINK_ID)
@@ -495,8 +495,8 @@ namespace TinyFS
 
         public byte[] ReadAll(uint handle)
         {
-            if (_stream == null) throw new ObjectDisposedException(GetType().FullName);
-            if (_stream.Length < handle * PAGE_SIZE) throw new IndexOutOfRangeException();
+            if (_writeStream == null) throw new ObjectDisposedException(GetType().FullName);
+            if (_writeStream.Length < handle * PAGE_SIZE) throw new IndexOutOfRangeException();
             if (handle == FILE_HEADER_PAGE_INDEX) throw new IOException("Invalid handle");
             var header = ReadPageHeader(handle);
             if ((header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Free) == (byte)PageInfoMask.Free) throw new IOException("handle is unallocated");
@@ -511,12 +511,12 @@ namespace TinyFS
                 using (LockManager.Instance.Get(handle, LockType.Read))
                 {
                     if (_options.VerifyOnRead && !ValidatePageCrc(handle)) throw new InvalidDataException("Checksum verification failed. Corrupt data.");
-                    _stream.Position = handle * PAGE_SIZE + PAGE_HEADER_SIZE;
+                    _writeStream.Position = handle * PAGE_SIZE + PAGE_HEADER_SIZE;
 
                     if (_options.UseEncryption)
                     {
                         var page = new byte[PAGE_DATA_SIZE];
-                        _stream.Read(page, 0, PAGE_DATA_SIZE);
+                        _writeStream.Read(page, 0, PAGE_DATA_SIZE);
                         var encryptedLength = BitConverter.ToInt32(page, ENCRYPTION_DATA_LENGTH_INDEX);
                         var plaintext = Decrypt(page, ENCRYPTION_DATA_START_INDEX, encryptedLength);
                         Buffer.BlockCopy(plaintext, 0, data, (int)offset, plaintext.Length);
@@ -526,15 +526,15 @@ namespace TinyFS
                     else
                     {
                         uint ic = count > PAGE_DATA_SIZE ? PAGE_DATA_SIZE : count;
-                        _stream.Read(data, (int)offset, (int)ic);
+                        _writeStream.Read(data, (int)offset, (int)ic);
                         offset += ic;
                         count -= ic;
                     }
                     if (count > 0)
                     {
                         var buffer = new byte[4];
-                        _stream.Position = handle * PAGE_SIZE + PAGE_HEADER_INDEX_PAGE_LINK;
-                        _stream.Read(buffer, 0, 4);
+                        _writeStream.Position = handle * PAGE_SIZE + PAGE_HEADER_INDEX_PAGE_LINK;
+                        _writeStream.Read(buffer, 0, 4);
                         handle = BitConverter.ToUInt32(buffer, 0);
                     }
                 }
@@ -567,8 +567,8 @@ namespace TinyFS
                 using (LockManager.Instance.Get(handle, LockType.Read))
                 {
                     uint bytesToRead = PAGE_DATA_SIZE - srcOffset > count ? count : PAGE_DATA_SIZE - srcOffset;
-                    _stream.Position = handle * PAGE_SIZE + PAGE_HEADER_SIZE + srcOffset;
-                    var actualReadBytes = (uint)_stream.Read(buffer, (int)totalReadBytes, (int)bytesToRead);
+                    _writeStream.Position = handle * PAGE_SIZE + PAGE_HEADER_SIZE + srcOffset;
+                    var actualReadBytes = (uint)_writeStream.Read(buffer, (int)totalReadBytes, (int)bytesToRead);
                     count -= actualReadBytes;
                     if (actualReadBytes != bytesToRead && count > 0)
                     {
@@ -702,35 +702,35 @@ namespace TinyFS
 
         private void WritePageLink(uint ix, uint linkIx)
         {
-            _stream.Position = (ix*PAGE_SIZE) + PAGE_HEADER_INDEX_PAGE_LINK;
-            _stream.Write(BitConverter.GetBytes(linkIx), 0, sizeof(uint));
+            _writeStream.Position = (ix*PAGE_SIZE) + PAGE_HEADER_INDEX_PAGE_LINK;
+            _writeStream.Write(BitConverter.GetBytes(linkIx), 0, sizeof(uint));
         }
 
         private void WritePageCrc(uint ix)
         {
-            _stream.Position = ix*PAGE_SIZE;
+            _writeStream.Position = ix*PAGE_SIZE;
             var data = new byte[PAGE_SIZE];
-            _stream.Read(data, 0, PAGE_SIZE);
+            _writeStream.Read(data, 0, PAGE_SIZE);
             var crc = Crc.GetCrc(data, 0, PAGE_SIZE - 4);
-            _stream.Position = (ix*PAGE_SIZE) + PAGE_FOOTER_INDEX_CRC;
-            _stream.Write(BitConverter.GetBytes(crc), 0, sizeof(uint));
+            _writeStream.Position = (ix*PAGE_SIZE) + PAGE_FOOTER_INDEX_CRC;
+            _writeStream.Write(BitConverter.GetBytes(crc), 0, sizeof(uint));
         }
 
         private void WritePageHeader(uint ix, byte[] data)
         {
             Debug.Assert(data.Length == PAGE_HEADER_SIZE);
             var pos = ix*PAGE_SIZE;
-            _stream.Position = pos;
-            _stream.Write(data, 0, PAGE_HEADER_SIZE);
+            _writeStream.Position = pos;
+            _writeStream.Write(data, 0, PAGE_HEADER_SIZE);
         }
 
         private byte[] ReadPageHeader(uint ix)
         {
             var pos = ix*PAGE_SIZE;
-            Debug.Assert(_stream.Length > pos);
-            _stream.Position = pos;
+            Debug.Assert(_writeStream.Length > pos);
+            _writeStream.Position = pos;
             var data = new byte[PAGE_HEADER_SIZE];
-            _stream.Read(data, 0, PAGE_HEADER_SIZE);
+            _writeStream.Read(data, 0, PAGE_HEADER_SIZE);
             return data;
         }
 
@@ -747,9 +747,9 @@ namespace TinyFS
             byte[] pageCrc = new byte[4];
             using (LockManager.Instance.Get(ix, LockType.Read))
             {
-                _stream.Position = ix * PAGE_SIZE;
-                _stream.Read(data, 0, PAGE_SIZE - 4);
-                _stream.Read(pageCrc, 0, 4);
+                _writeStream.Position = ix * PAGE_SIZE;
+                _writeStream.Read(data, 0, PAGE_SIZE - 4);
+                _writeStream.Read(pageCrc, 0, 4);
             }
             var actualCrc = BitConverter.GetBytes(Crc.GetCrc(data, 0, PAGE_SIZE-4));
             for(int i=0;i<4;i++)
@@ -761,18 +761,18 @@ namespace TinyFS
 
         private bool TryLoadFileHeader()
         {
-            if (_stream == null)
+            if (_writeStream == null)
                 throw new ObjectDisposedException(GetType().FullName);
-            if (_stream.Length == 0) return false;
-            if (_stream.Length < CHAPTER_SIZE * PAGE_SIZE) return false;
+            if (_writeStream.Length == 0) return false;
+            if (_writeStream.Length < CHAPTER_SIZE * PAGE_SIZE) return false;
             if (!ValidatePageCrc(FILE_HEADER_PAGE_INDEX)) return false;
 
             var buffer = new byte[50];
-            _stream.Position = FILE_HEADER_INDEX_MAGIC;
+            _writeStream.Position = FILE_HEADER_INDEX_MAGIC;
             int magicbytecount = 0;
             for (; magicbytecount < 50; magicbytecount++)
             {
-                _stream.Read(buffer, magicbytecount, 1);
+                _writeStream.Read(buffer, magicbytecount, 1);
                 if (buffer[magicbytecount] == 0x0) break;
             }
             _header.Magic = new byte[magicbytecount];
@@ -782,15 +782,15 @@ namespace TinyFS
             var magicstring = encoder.GetString(_header.Magic);
             if (!magicstring.Equals(MAGIC_STRING)) return false;
 
-            _stream.Position = FILE_HEADER_INDEX_VERSION;
-            _stream.Read(buffer, 0, 2);
+            _writeStream.Position = FILE_HEADER_INDEX_VERSION;
+            _writeStream.Read(buffer, 0, 2);
             _header.Version = BitConverter.ToUInt16(buffer, 0);
             if (_header.Version > FILE_VERSION) return false;
 
-            _stream.Position = FILE_HEADER_INDEX_FIRST_FREEPAGE;
-            _stream.Read(buffer, 0, 4);
+            _writeStream.Position = FILE_HEADER_INDEX_FIRST_FREEPAGE;
+            _writeStream.Read(buffer, 0, 4);
             _header.FirstFreePage = BitConverter.ToUInt32(buffer, 0);
-            _header.ChapterCount = Convert.ToUInt32(_stream.Length)/(CHAPTER_SIZE*PAGE_SIZE);
+            _header.ChapterCount = Convert.ToUInt32(_writeStream.Length)/(CHAPTER_SIZE*PAGE_SIZE);
             return true;
         }
 
@@ -815,7 +815,7 @@ namespace TinyFS
 
         private void WriteFileHeader()
         {
-            if (_stream == null) throw new ObjectDisposedException(GetType().FullName);
+            if (_writeStream == null) throw new ObjectDisposedException(GetType().FullName);
             lock(_sync)
             {
                 var data = new byte[PAGE_SIZE];
@@ -827,8 +827,8 @@ namespace TinyFS
                 Buffer.BlockCopy(BitConverter.GetBytes(firstFreePageIndex), 0, data, FILE_HEADER_INDEX_FIRST_FREEPAGE, sizeof(uint));
                 var crc = Crc.GetCrc(data, 0, PAGE_SIZE - 4);
                 Buffer.BlockCopy(BitConverter.GetBytes(crc), 0, data, PAGE_SIZE - 4, 4);
-                _stream.Position = 0;
-                _stream.Write(data, 0, data.Length);
+                _writeStream.Position = 0;
+                _writeStream.Write(data, 0, data.Length);
                 if (_options.FlushAtWrite) Flush(true);
             }
         }
@@ -838,7 +838,7 @@ namespace TinyFS
             // note: AddChapter increments _header.ChapterCount without writing the file header to the stream. 
             //       All places where AddChapter are called are taking care of this since they often affect the  
             //       file header as well. Micro-optimization. Keep. 
-            if (_stream == null) throw new ObjectDisposedException(GetType().FullName);
+            if (_writeStream == null) throw new ObjectDisposedException(GetType().FullName);
             if ((_header.ChapterCount * CHAPTER_SIZE) + CHAPTER_SIZE > MAX_PAGE_COUNT) throw new Exception("file full. Can't allocate additional pages");
             lock(_sync)
             {
@@ -857,8 +857,8 @@ namespace TinyFS
                 crc = BitConverter.GetBytes(Crc.GetCrc(data, (CHAPTER_SIZE - 1) * PAGE_SIZE, PAGE_SIZE-4));
                 Buffer.BlockCopy(crc, 0, data, (CHAPTER_SIZE - 1) * PAGE_SIZE + PAGE_FOOTER_INDEX_CRC, 4);
                 // figure out the correct stream position for where to write our new chapter
-                _stream.Position = _header.ChapterCount*CHAPTER_SIZE * PAGE_SIZE;
-                _stream.Write(data, 0, data.Length);
+                _writeStream.Position = _header.ChapterCount*CHAPTER_SIZE * PAGE_SIZE;
+                _writeStream.Write(data, 0, data.Length);
                 _header.ChapterCount++;
                 if (_options.FlushAtWrite) Flush(true);
             }
@@ -866,11 +866,11 @@ namespace TinyFS
 
         private void Flush(bool force)
         {
-            if (_stream == null) throw new ObjectDisposedException(GetType().FullName);
+            if (_writeStream == null) throw new ObjectDisposedException(GetType().FullName);
             if (force)
-                Flush(_stream);
+                Flush(_writeStream);
             else
-                _stream.Flush();
+                _writeStream.Flush();
         }
 
         private void Flush(Stream stream)
@@ -910,13 +910,13 @@ namespace TinyFS
             _disposed = true;
             if (disposing)
             {
-                if (_stream != null)
+                if (_writeStream != null)
                 {
                     WriteFileHeader();
                     Flush(true);
-                    _stream.Dispose();
+                    _writeStream.Dispose();
                 }
-                _stream = null;
+                _writeStream = null;
             }
         }
         #endregion

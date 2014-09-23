@@ -18,6 +18,8 @@ namespace TinyFS
 {
     public interface IFileStreamFactory
     {
+        Stream Create();
+        string Path { get; }
         Stream Create(string path, FileMode mode, FileAccess access, FileShare share, int bufferSize, FileOptions options);
     }
 }
