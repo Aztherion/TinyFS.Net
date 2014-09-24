@@ -368,6 +368,9 @@ namespace TinyFS.Test
             public UndisposableMemoryStream Stream { get { return _ms; } }
 
             private UndisposableMemoryStream _ms;
+            
+            public string Path { get { return string.Empty; }}
+
             public UndisposableMemoryStreamFactory()
             {
                 _ms = new UndisposableMemoryStream();
@@ -377,6 +380,13 @@ namespace TinyFS.Test
             {
                 return _ms;
             }
+
+            public Stream Create()
+            {
+                return _ms;
+            }
+
+           
         }
 
         internal class UndisposableMemoryStream : MemoryStream
