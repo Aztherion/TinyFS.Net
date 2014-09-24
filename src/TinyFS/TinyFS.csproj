@@ -71,6 +71,8 @@
     <Compile Include="Locking\ReadLock.cs" />
     <Compile Include="Locking\WriteLock.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="StreamCache.cs" />
+    <Compile Include="StreamWrapper.cs" />
     <Compile Include="Toc.cs" />
     <Compile Include="TocEntry.cs" />
     <Compile Include="Win32.cs" />
