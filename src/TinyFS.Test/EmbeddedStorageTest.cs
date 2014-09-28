@@ -11,7 +11,7 @@ namespace TinyFS.Test
         [TestMethod]
         public void InitializeEmptyFile_ExpectsNoFiles()
         {
-            var path = Path.GetTempFileName();
+            var path = GetTempFileName();
             if (File.Exists(path)) File.Delete(path);
             using(var es = new EmbeddedStorage(path))
             {
@@ -24,7 +24,7 @@ namespace TinyFS.Test
         [TestMethod]
         public void InitializeEmptyFile_AddOneFile()
         {
-            var path = Path.GetTempFileName();
+            var path = GetTempFileName();
             if (File.Exists(path)) File.Delete(path);
             using (var es = new EmbeddedStorage(path))
             {
@@ -42,7 +42,7 @@ namespace TinyFS.Test
         [TestMethod]
         public void InitializeEmptyFile_WriteOneFile()
         {
-            var path = Path.GetTempFileName();
+            var path = GetTempFileName();
             if (File.Exists(path)) File.Delete(path);
             using (var es = new EmbeddedStorage(path))
             {
@@ -60,7 +60,7 @@ namespace TinyFS.Test
         [TestMethod]
         public void WriteOneFile_RemoveOneFile()
         {
-            var path = Path.GetTempFileName();
+            var path = GetTempFileName();
             if (File.Exists(path)) File.Delete(path);
             using (var es = new EmbeddedStorage(path))
             {
@@ -82,7 +82,7 @@ namespace TinyFS.Test
         [TestMethod]
         public void ExistingFile_ContainsOneFile()
         {
-            var path = Path.GetTempFileName();
+            var path = GetTempFileName();
             if (File.Exists(path)) File.Delete(path);
             using (var es = new EmbeddedStorage(path))
             {
@@ -100,8 +100,10 @@ namespace TinyFS.Test
         [TestMethod]
         public void ExistingFile_ReadBigFile()
         {
-            var path = Path.GetTempFileName();
+            var path = GetTempFileName();
             if (File.Exists(path)) File.Delete(path);
+            //path = Path.Combine(Path.GetTempPath(), "3baf8b24848f41389022cc879083cbe5");
+
             const int count = 8192;
             var data = new byte[count];
             for (var i = 0; i < count; i++) data[i] = (byte) (i%0xff);
@@ -119,7 +121,7 @@ namespace TinyFS.Test
         [TestMethod]
         public void ExistingFile_SearchByFilename_ReadBigFile()
         {
-            var path = Path.GetTempFileName();
+            var path = GetTempFileName();
             if (File.Exists(path)) File.Delete(path);
             const int count = 8192;
             var data = new byte[count];
@@ -136,6 +138,17 @@ namespace TinyFS.Test
                 for (var i = 0; i < count; i++) Assert.AreEqual(data[i], content[i]);
             }
             if (File.Exists(path)) File.Delete(path);
+        }
+
+        private readonly object _lock = new object();
+        private string GetTempFileName()
+        {
+            lock (_lock)
+            {
+                var dir = Path.GetTempPath();
+                var id = Guid.NewGuid();
+                return Path.Combine(dir, id.ToString().Replace("-", string.Empty));                
+            }
         }
     }
 }

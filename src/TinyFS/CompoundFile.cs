@@ -105,7 +105,9 @@ namespace TinyFS
 {
     public class CompoundFile : IDisposable
     {
-        
+        private readonly IFileStreamFactory _fileStreamFactoryWrite;
+        private readonly IFileStreamFactory _fileStreamFactoryRead;
+
 
         [Flags]
         private enum PageInfoMask : byte
@@ -156,7 +158,6 @@ namespace TinyFS
         private readonly object _sync = new object();
         private readonly FileHeader _header = new FileHeader();
         private readonly CompoundFileOptions _options;
-        private readonly IFileStreamFactory _fileStreamFactory;
         private bool _disposed;
         private byte[] _key;
         private byte[] _iv;
@@ -165,12 +166,10 @@ namespace TinyFS
 
         public CompoundFile(string path) : this(path, new CompoundFileOptions()) { }
 
-        public CompoundFile(string path, CompoundFileOptions options, IFileStreamFactory fileStreamFactory) : this(path, options)
-        {
-            _fileStreamFactory = fileStreamFactory;
-        }
-
         public CompoundFile(string path, CompoundFileOptions options)
+            : this(path, options, null, null) { }
+
+        public CompoundFile(string path, CompoundFileOptions options, IFileStreamFactory fileStreamFactoryWrite, IFileStreamFactory fileStreamFactoryRead)
         {
             Debug.Assert(UintZero.Length == sizeof(uint));
             FileOptions foptions;
@@ -179,11 +178,13 @@ namespace TinyFS
             else
                 foptions = FileOptions.RandomAccess | FileOptions.WriteThrough;
             _options = options;
+            _fileStreamFactoryWrite = fileStreamFactoryWrite;
+            _fileStreamFactoryRead = fileStreamFactoryRead;
             bool fileExists = File.Exists(path);
             lock (_sync)
             {
-                _writeStreamCache = new StreamCache(_fileStreamFactory ?? new FileStreamFactory(new FileStreamFactory.Options(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, foptions, options.BufferSize)));
-                _readStreamCache = new StreamCache(_fileStreamFactory ?? new FileStreamFactory(new FileStreamFactory.Options(path, FileMode.OpenOrCreate, FileAccess.Read, FileShare.Read, foptions, options.BufferSize)));
+                _writeStreamCache = new StreamCache(_fileStreamFactoryWrite ?? new FileStreamFactory(new FileStreamFactory.Options(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, foptions, options.BufferSize)));
+                _readStreamCache = new StreamCache(_fileStreamFactoryRead ?? new FileStreamFactory(new FileStreamFactory.Options(path, FileMode.OpenOrCreate, FileAccess.Read, FileShare.ReadWrite, foptions, options.BufferSize)));
 
                 //_writeStream = fileStreamFactory.Create(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, options.BufferSize, foptions);
                 if (!TryLoadFileHeader())
@@ -373,12 +374,11 @@ namespace TinyFS
                     if (_options.UseEncryption)
                     {
                         if ((header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Encypted) != (byte)PageInfoMask.Encypted)
-                        {
                             header[PAGE_HEADER_INDEX_STATUS] ^= (byte) PageInfoMask.Encypted;        
-                        }
                     } else
                     {
-                        header[PAGE_HEADER_INDEX_STATUS] |= (byte)PageInfoMask.Encypted;
+                        if ((header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Encypted) == (byte)PageInfoMask.Encypted)
+                            header[PAGE_HEADER_INDEX_STATUS] ^= (byte)PageInfoMask.Encypted;
                     }
                     WritePageHeader(handle, header);
 
@@ -532,7 +532,7 @@ namespace TinyFS
             if (handle == FILE_HEADER_PAGE_INDEX) throw new IOException("Invalid handle");
             var header = ReadPageHeader(handle);
             if ((header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Free) == (byte)PageInfoMask.Free) throw new IOException("handle is unallocated");
-            if ((header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Encypted) == (byte)PageInfoMask.Encypted && !_options.UseEncryption) throw new InvalidOperationException("Page is encrypted");
+            if ((header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Encypted) == (byte)PageInfoMask.Encypted && !_options.UseEncryption) throw new SecurityException("Page is encrypted");
             //if (header[PAGE_HEADER_INDEX_STATUS] == PAGE_STATUS_FREE) throw new IOException("handle is unallocated");
             uint count = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_DATA_LENGTH);
             if (count > int.MaxValue) throw new InvalidOperationException();
@@ -543,9 +543,8 @@ namespace TinyFS
                 using (LockManager.Instance.Get(handle, LockType.Read))
                 {
                     if (_options.VerifyOnRead && !ValidatePageCrc(handle)) throw new InvalidDataException("Checksum verification failed. Corrupt data.");
-                    
 
-                    if (_options.UseEncryption)
+                    if (_options.UseEncryption && (header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Encypted) == (byte)PageInfoMask.Encypted)
                     {
                         var page = new byte[PAGE_DATA_SIZE];
                         using (var readStream = _readStreamCache.Open(FileAccess.Read))
@@ -561,6 +560,7 @@ namespace TinyFS
                     }
                     else
                     {
+                        if ((header[PAGE_HEADER_INDEX_STATUS] & (byte)PageInfoMask.Encypted) == (byte)PageInfoMask.Encypted) throw new SecurityException("Page is encrypted but file is opened without encryption");
                         uint ic = count > PAGE_DATA_SIZE ? PAGE_DATA_SIZE : count;
                         using (var readStream = _readStreamCache.Open(FileAccess.Read))
                         {
@@ -579,6 +579,7 @@ namespace TinyFS
                             readStream.Read(buffer, 0, 4);                            
                         }
                         handle = BitConverter.ToUInt32(buffer, 0);
+                        header = ReadPageHeader(handle);
                     }
                 }
             }                

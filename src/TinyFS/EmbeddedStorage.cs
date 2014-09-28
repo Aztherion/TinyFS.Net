@@ -38,7 +38,7 @@ namespace TinyFS
             {
                 if (!AllocateToc())
                 {
-                    throw new Exception("Catastrophic failure. Could not allocate TOC.");
+                    throw new Exception("Catastrophic failure. Could not allocate TOC. File '" + path + "'");
                 }
             }
         }
@@ -182,8 +182,9 @@ namespace TinyFS
                 WriteToc();
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Console.WriteLine(ex);
                 return false;
             }
         }

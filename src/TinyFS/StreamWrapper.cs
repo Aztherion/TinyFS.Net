@@ -56,7 +56,11 @@ namespace TinyFS
         protected override void Dispose(bool disposing)
         {
             if (disposing && _stream != null)
+            {
+                Flush();
+                _stream.Close();
                 _stream.Dispose();
+            }                
             _stream = null;
 
             base.Dispose(disposing);

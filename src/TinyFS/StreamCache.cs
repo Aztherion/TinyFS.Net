@@ -14,6 +14,7 @@ namespace TinyFS
         private readonly IFileStreamFactory _streamFactory;
         private readonly Mutex[] _handles;
         private readonly Stream[] _streams;
+        private RefInt[] _refCount;
         private bool _disposed;
 
         public StreamCache(IFileStreamFactory streamFactory)
@@ -24,7 +25,9 @@ namespace TinyFS
             _streamFactory = streamFactory;
             _handles = new Mutex[maxHandleCount];
             _streams = new Stream[maxHandleCount];
+            _refCount = new RefInt[maxHandleCount];
             InitializeMutexes();
+            InitializeRefcount();
         }
 
         public Stream Open(FileAccess fileAccess)
@@ -49,8 +52,7 @@ namespace TinyFS
             }
             if (stream.CanSeek)
                 stream.Seek(0, SeekOrigin.Begin);
-
-            return new CachedStream(this, stream, fileAccess, _handles[ix]);
+            return new CachedStream(this, stream, fileAccess, _handles[ix], _refCount[ix]);
         }
 
         public void Dispose()
@@ -82,9 +84,13 @@ namespace TinyFS
         {
             var ix = _handles.Length;
             for (var i = 0; i < ix; i++)
-            {
                 _handles[i] = new Mutex();
-            }
+        }
+
+        private void InitializeRefcount()
+        {
+            for (var i = 0; i < _handles.Length; i++)
+                _refCount[i] = new RefInt();
         }
 
         private void ResetHandle(Mutex handle)
@@ -98,23 +104,36 @@ namespace TinyFS
             }
         }
 
+        private class RefInt
+        {
+            public int Value { get; set; }
+
+            public RefInt()
+            {
+                Value = 0;
+            }
+        }
+
         private class CachedStream : StreamWrapper
         {
             private const FileAccess NO_ACCESS = 0;
             private readonly StreamCache _cache;
             private readonly Mutex _handle;
             private FileAccess _fileAccess;
+            private RefInt _refCount;
 
             public override bool CanRead { get { return (_fileAccess & FileAccess.Read) == FileAccess.Read && Stream.CanRead; } }
             public override bool CanSeek { get { return _fileAccess != NO_ACCESS && Stream.CanSeek; } }
             public override bool CanWrite { get { return (_fileAccess & FileAccess.Write) == FileAccess.Write && Stream.CanWrite; } }
 
-            public CachedStream(StreamCache cache, Stream stream, FileAccess fileaccess, Mutex handle)
+            public CachedStream(StreamCache cache, Stream stream, FileAccess fileaccess, Mutex handle, RefInt refCount)
                 : base(stream)
             {
                 _cache = cache;
                 _handle = handle;
                 _fileAccess = fileaccess;
+                _refCount = refCount;
+                _refCount.Value++;
             }
 
             //[System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA1816:CallGCSuppressFinalizeCorrectly")]
@@ -148,7 +167,9 @@ namespace TinyFS
 
             protected override void Dispose(bool disposing)
             {
-                base.Dispose(disposing);
+                if (--_refCount.Value != 0) return;
+                    base.Dispose(disposing);
+
                 if (_fileAccess != NO_ACCESS)
                 {
                     _fileAccess = NO_ACCESS;

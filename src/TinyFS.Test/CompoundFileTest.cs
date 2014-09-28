@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Security;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace TinyFS.Test
@@ -28,63 +29,68 @@ namespace TinyFS.Test
         [TestMethod]
         public void Allocate_Test()
         {
-            var path = Path.GetTempFileName();
-            if (File.Exists(path)) File.Delete(path);
-            using (var file = new CompoundFile(path))
+            var msf = new UndisposableMemoryStreamFactory();
+            using (var file = new CompoundFile("xxx", new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 var ix = file.Allocate();
                 Assert.AreEqual((uint)1, ix);
             }
-            if (File.Exists(path)) File.Delete(path);
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();
+
         }
 
         [TestMethod]
         public void Allocate_255Bytes()
         {
-            var path = Path.GetTempFileName();
-            if (File.Exists(path)) File.Delete(path);
-            using (var file = new CompoundFile(path))
+            var msf = new UndisposableMemoryStreamFactory();
+            using (var file = new CompoundFile("xxx", new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 var ix = file.Allocate(255);
                 Assert.AreEqual((uint) 1, ix);
             }
-            if (File.Exists(path)) File.Delete(path);
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();
+
         }
 
         [TestMethod]
         public void Allocate_6000Bytes()
         {
-            var path = Path.GetTempFileName();
-            if (File.Exists(path)) File.Delete(path);
-            using (var file = new CompoundFile(path))
+            var msf = new UndisposableMemoryStreamFactory();
+            using (var file = new CompoundFile("xxx", new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 var ix = file.Allocate(6000);
                 Assert.AreEqual((uint) 1, ix);
             }
-            if (File.Exists(path)) File.Delete(path);
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();
         }
 
         [TestMethod]
         public void Allocate_FullChapter_Test()
         {
-            var path = Path.GetTempFileName();
-            if (File.Exists(path)) File.Delete(path);
-            using (var file = new CompoundFile(path))
+            var msf = new UndisposableMemoryStreamFactory(); 
+            using (var file = new CompoundFile("xxx", new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 for (int i=0;i<4096;i++)
                 {
                     var ix = file.Allocate();
                 }
             }
-            if (File.Exists(path)) File.Delete(path);
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();
         }
 
         [TestMethod]
         public void Allocate_Write_SinglePage()
         {
-            var path = Path.GetTempFileName();
-            if (File.Exists(path)) File.Delete(path);
-            using (var file = new CompoundFile(path))
+            var msf = new UndisposableMemoryStreamFactory();
+            using (var file = new CompoundFile("xxx", new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 var ix = file.Allocate();
                 var data = new byte[255];
@@ -92,31 +98,33 @@ namespace TinyFS.Test
                     data[i] = i;
                 file.Write(ix, data, 0, 255);
             }
-            if (File.Exists(path)) File.Delete(path);
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();
         }
 
         [TestMethod]
         public void Allocate_Write_TwoPages()
         {
-            var path = Path.GetTempFileName();
-            if (File.Exists(path)) File.Delete(path);
-            using (var file = new CompoundFile(path))
+            var msf = new UndisposableMemoryStreamFactory();
+            using (var file = new CompoundFile("xxx", new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 var ix = file.Allocate();
                 var data = new byte[6000];
                 for (int i = 0; i < 6000; i++)
                     data[i] = (byte) (i%255);
                 file.Write(ix, data, 0, 6000);
-            }
-            if (File.Exists(path)) File.Delete(path);
+            } 
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();
         }
 
         [TestMethod]
         public void Allocate_Write_Read_SinglePage()
         {
-            var path = Path.GetTempFileName();
-            if (File.Exists(path)) File.Delete(path);
-            using (var file = new CompoundFile(path))
+            var msf = new UndisposableMemoryStreamFactory();
+            using (var file = new CompoundFile("xxx", new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 var ix = file.Allocate();
                 var data = new byte[255];
@@ -126,15 +134,16 @@ namespace TinyFS.Test
                 for(byte i=0;i<255;i++)
                     Assert.AreEqual(data[i], readData[i]);
             }
-            if (File.Exists(path)) File.Delete(path);
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();
         }
 
         [TestMethod]
         public void Allocate_Write_Read_TwoPages()
         {
-            var path = Path.GetTempFileName();
-            if (File.Exists(path)) File.Delete(path);
-            using (var file = new CompoundFile(path))
+            var msf = new UndisposableMemoryStreamFactory();
+            using (var file = new CompoundFile("xxx", new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 var ix = file.Allocate();
                 var data = new byte[6000];
@@ -145,7 +154,9 @@ namespace TinyFS.Test
                 for(int i=0;i<6000;i++)
                     Assert.AreEqual(data[i], readdata[i]);
             }
-            if (File.Exists(path)) File.Delete(path);
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();
         }
 
         [TestMethod]
@@ -153,7 +164,7 @@ namespace TinyFS.Test
         {
             const string path = "xxx";
             var msf = new UndisposableMemoryStreamFactory();
-            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf)) { }
+            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf, msf)) { }
             var stream = msf.Stream;
             Assert.AreEqual(4096 * 4096, stream.Length);
             stream.AllowDispose = true;
@@ -165,7 +176,7 @@ namespace TinyFS.Test
         {
             const string path = "xxx";
             var msf = new UndisposableMemoryStreamFactory();
-            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf)) { }
+            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf, msf)) { }
             var stream = msf.Stream;
             var buffer = new byte[4];
 
@@ -198,7 +209,7 @@ namespace TinyFS.Test
         {
             const string path = "xxx";
             var msf = new UndisposableMemoryStreamFactory();
-            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf)) 
+            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf, msf)) 
             {
                 Assert.IsTrue(file.ValidateCrc());
             }
@@ -212,7 +223,7 @@ namespace TinyFS.Test
         {
             const string path = "xxx";
             var msf = new UndisposableMemoryStreamFactory();
-            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf))
+            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 var handle = file.Allocate();
                 var data = new byte[255];
@@ -233,7 +244,7 @@ namespace TinyFS.Test
         {
             const string path = "xxx";
             var msf = new UndisposableMemoryStreamFactory();
-            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf))
+            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 var handle = file.Allocate();
                 var data = new byte[255];
@@ -256,7 +267,7 @@ namespace TinyFS.Test
         {
             const string path = "xxx";
             var msf = new UndisposableMemoryStreamFactory();
-            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf))
+            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 var handle = file.Allocate();
                 var data = new byte[255];
@@ -279,7 +290,7 @@ namespace TinyFS.Test
         {
             const string path = "xxx";
             var msf = new UndisposableMemoryStreamFactory();
-            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf))
+            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 var handle = file.Allocate();
                 var data = new byte[255];
@@ -302,7 +313,7 @@ namespace TinyFS.Test
         {
             const string path = "xxx";
             var msf = new UndisposableMemoryStreamFactory();
-            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf))
+            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 var handle = file.Allocate();
                 var data = new byte[255];
@@ -324,7 +335,7 @@ namespace TinyFS.Test
         {
             const string path = "xxx";
             var msf = new UndisposableMemoryStreamFactory();
-            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf))
+            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 var handle = file.Allocate();
                 var data = new byte[8000];
@@ -346,7 +357,7 @@ namespace TinyFS.Test
         {
             const string path = "xxx";
             var msf = new UndisposableMemoryStreamFactory();
-            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf))
+            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf, msf))
             {
                 var handle = file.Allocate();
                 var data = new byte[8000];
@@ -361,6 +372,153 @@ namespace TinyFS.Test
             var stream = msf.Stream;
             stream.AllowDispose = true;
             stream.Dispose();            
+        }
+
+        [TestMethod]
+        public void Write_WithEncryption_ExpectsOk()
+        {
+            const string path = "xxx";
+            var msf = new UndisposableMemoryStreamFactory();
+            var options = new CompoundFile.CompoundFileOptions();
+            options.UseEncryption = true;
+            options.Password = "abc123";
+
+            using (var file = new CompoundFile(path, options, msf, msf))
+            {
+                var data = new byte[255];
+                for (var i = 0; i < 255; i++) data[i] = 0xFF;
+                var handle = file.Allocate();
+                file.Write(handle, data, 0, 255);
+            }
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();
+        }
+
+        [TestMethod]
+        public void ReadAllOnePage_WithEncryption_ExpectsOk()
+        {
+            const string path = "xxx";
+            var msf = new UndisposableMemoryStreamFactory();
+            var options = new CompoundFile.CompoundFileOptions();
+            options.UseEncryption = true;
+            options.Password = "abc123";
+
+            using (var file = new CompoundFile(path, options, msf, msf))
+            {
+                var data = new byte[255];
+                for (var i = 0; i < 255; i++) data[i] = 0xFF;
+                var handle = file.Allocate();
+                file.Write(handle, data, 0, 255);
+
+                var buffer = file.ReadAll(handle);
+                Assert.AreEqual(255, buffer.Length);
+                for(var i=0;i<255;i++)Assert.AreEqual(data[i], buffer[i]);
+            }
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();
+        }
+
+        [TestMethod]
+        public void ReadAllTwoPages_WithEncryption_ExpectsOk()
+        {
+            const string path = "xxx";
+            var msf = new UndisposableMemoryStreamFactory();
+            var options = new CompoundFile.CompoundFileOptions();
+            options.UseEncryption = true;
+            options.Password = "abc123";
+
+            using (var file = new CompoundFile(path, options, msf, msf))
+            {
+                var data = new byte[6000];
+                for (var i = 0; i < 6000; i++) data[i] = 0xFF;
+                var handle = file.Allocate();
+                file.Write(handle, data, 0, 6000);
+
+                var buffer = file.ReadAll(handle);
+                Assert.AreEqual(6000, buffer.Length);
+                for (var i = 0; i < 6000; i++) Assert.AreEqual(data[i], buffer[i]);
+            }
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();            
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(SecurityException))]
+        public void ReadAllOnePage_ReadEncryptedFileWithoutEncryption_ExpectsException()
+        {
+            const string path = "xxx";
+            var msf = new UndisposableMemoryStreamFactory();
+            var options = new CompoundFile.CompoundFileOptions();
+            options.UseEncryption = true;
+            options.Password = "abc123";
+            uint handle;
+
+            using (var file = new CompoundFile(path, options, msf, msf))
+            {
+                var data = new byte[255];
+                for (var i = 0; i < 255; i++) data[i] = 0xFF;
+                handle = file.Allocate();
+                file.Write(handle, data, 0, 255);
+            }
+
+            using (var file = new CompoundFile(path, new CompoundFile.CompoundFileOptions(), msf, msf))
+            {
+                var buffer = file.ReadAll(handle);
+                Assert.AreEqual(255, buffer.Length);
+                for (var i = 0; i < 255; i++) Assert.AreEqual(0xFF, buffer[i]);                
+            }
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();            
+        }
+
+        [TestMethod]
+        public void WriteRead_SamePage_SameFile()
+        {
+            var path = GetTempFileName();
+            uint handle;
+            uint handle2;
+            using (var file = new CompoundFile(path))
+            {
+                handle = file.Allocate();
+                var data = new byte[255];
+                for (var i = 0; i < data.Length; i++) data[i] = 0xFF;
+                file.Write(handle, data, 0, data.Length);
+
+                var buffer = new byte[255];
+                file.ReadAt(handle, buffer, 0, 255);
+                for (var i = 0; i < data.Length; i++) Assert.AreEqual(data[i], buffer[i]);
+
+                handle2 = file.Allocate();
+                file.Write(handle2, data, 0, 255);
+
+                buffer = new byte[255];
+                file.ReadAt(handle2, buffer, 0, 255);
+                for (var i = 0; i < data.Length; i++) Assert.AreEqual(data[i], buffer[i]);
+            }
+
+            using (var file = new CompoundFile(path))
+            {
+                var buffer = new byte[255];
+                file.ReadAt(handle, buffer, 0, 255);
+                for (var i = 0; i < buffer.Length; i++) Assert.AreEqual(0xFF, buffer[i]);
+            }
+            if (File.Exists(path)) File.Delete(path);
+        }
+
+        private readonly object _lock = new object();
+
+        private string GetTempFileName()
+        {
+            lock (_lock)
+            {
+                var dir = Path.GetTempPath();
+                var id = Guid.NewGuid();
+                return Path.Combine(dir, id.ToString().Replace("-", string.Empty));
+            }
         }
 
         internal class UndisposableMemoryStreamFactory : IFileStreamFactory
