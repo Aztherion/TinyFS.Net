@@ -476,6 +476,36 @@ namespace TinyFS.Test
         }
 
         [TestMethod]
+        public void ReadAt_ReadEncryptedFile_Ok()
+        {
+            const int fullLength = 255;
+            const int smallLength = 128;
+            const int offset = 127;
+            const string path = "xxx";
+            var msf = new UndisposableMemoryStreamFactory();
+            var options = new CompoundFile.CompoundFileOptions();
+            options.UseEncryption = true;
+            options.Password = "abc123";
+            uint handle;
+
+            using (var file = new CompoundFile(path, options, msf, msf))
+            {
+                var data = new byte[fullLength];
+                for (var i = 0; i < fullLength; i++) data[i] = (byte)(i % 0xFF);
+                handle = file.Allocate();
+                file.Write(handle, data, 0, fullLength);
+                
+                var buffer = new byte[smallLength];
+                var readBytes = file.ReadAt(handle, buffer, offset, smallLength);
+                Assert.AreEqual(smallLength, (int)readBytes);
+                for(var i=0;i<smallLength;i++) Assert.AreEqual(data[offset + i], buffer[i]);
+            }
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();                        
+        }
+
+        [TestMethod]
         public void WriteRead_SamePage_SameFile()
         {
             var path = GetTempFileName();
@@ -507,6 +537,52 @@ namespace TinyFS.Test
                 for (var i = 0; i < buffer.Length; i++) Assert.AreEqual(0xFF, buffer[i]);
             }
             if (File.Exists(path)) File.Delete(path);
+        }
+
+        [TestMethod]
+        public void ReadPage_WritesOneFullPageAndReadsIt_Ok()
+        {
+            const int length = 4083;
+            const string path = "xxx";
+            var msf = new UndisposableMemoryStreamFactory();
+            var options = new CompoundFile.CompoundFileOptions();
+            using (var file = new CompoundFile(path, options, msf, msf))
+            {
+                var data = new byte[length];
+                for (var i = 0; i < length; i++) data[i] = 0xFF;
+                var handle = file.Allocate();
+                file.Write(handle, data, 0, length);
+
+                var buffer = file.ReadPage(handle);
+                Assert.AreEqual(length, buffer.Length);
+                for (var i = 0; i < length; i++) Assert.AreEqual(data[i], buffer[i]);                
+            }
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();
+        }
+        
+        [TestMethod]
+        public void ReadPage_WritesOneNotFullPageAndReadsIt_Ok()
+        {
+            const int length = 255;
+            const string path = "xxx";
+            var msf = new UndisposableMemoryStreamFactory();
+            var options = new CompoundFile.CompoundFileOptions();
+            using (var file = new CompoundFile(path, options, msf, msf))
+            {
+                var data = new byte[length];
+                for (var i = 0; i < length; i++) data[i] = 0xFF;
+                var handle = file.Allocate();
+                file.Write(handle, data, 0, length);
+
+                var buffer = file.ReadPage(handle);
+                Assert.AreEqual(length, buffer.Length);
+                for (var i = 0; i < length; i++) Assert.AreEqual(data[i], buffer[i]);
+            }
+            var stream = msf.Stream;
+            stream.AllowDispose = true;
+            stream.Dispose();
         }
 
         private readonly object _lock = new object();

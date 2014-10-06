@@ -43,11 +43,20 @@ using TinyFS.Locking;
  * When a page is allocated the file header page link will be updated to the page following the one it pointed to previously. 
  * 
  * 
-Page layout
+Page layout - not encrypted
  [0-1] - status 
  [1-5] - linked page (links to next data page when page is in use, links to the next freepage when page is free)
  [5-9] - total data length (when several pages are linked, total data length indicates all remaining data from the current page and forward. 
  [9-4092] - data
+ [4092-4095] - crc
+
+Page layout - encrypted
+ [0-1] - status 
+ [1-5] - linked page (links to next data page when page is in use, links to the next freepage when page is free)
+ [5-9] - total data length (when several pages are linked, total data length indicates all remaining data from the current page and forward. 
+ [9-13] - length of encrypted data on this page
+ [13-4077] - encrypted data
+ [4077-4092] - empty
  [4092-4095] - crc
 
 Page 0, File header
@@ -66,16 +75,17 @@ Page 0, File header
 // todo         add more options to the page status field (see below)
 // todo         improve read performance when VerifyOnRead is true by only reading the page once. 
 // done         implement a better locking strategy for reading. Simultaneous I/O and multiple read.  (DONE! 2014-04-19)
-// todo         implement a stream reader cache
+// done         implement a stream reader cache
 // done         implement a better locking strategy for writing. Write multiple pages in parallell, synchronize when chapter needs to be added. (DONE! 2014-04-19)
 // done         implement asynchronous write (overlapped IO)
-// todo         implement ReadAt(uint handle, long position, byte[] buffer, int offset, int count)
+// done         implement ReadAt(uint handle, long position, byte[] buffer, int offset, int count)
 // todo         add a Minor File Version field to the file header. Minor version = non breaking changes. Major version = breaking changes.
 // todo         add a status field to page header that indicates that the content exists but is unavailable (syncing)
 // todo         look over what Exceptions are being thrown and see if they are "correct" or should be changed. 
 // todo         implement a LRU page read cache.
 // todo         implement Shrink() (Allow injection of an IShrinker/IPageMover/Similar since shrinking may require knowledge of content.)
 // todo         implement Defrag() (Allow injection of IPageMover/Similar since defrag may require knowledge of content. e.g. a binary tree node stored in a page may hold page index to other nodes.) 
+// done         implement encryption
 //
 // page status flags (wishlist)
 // isCompressed
@@ -448,7 +458,7 @@ namespace TinyFS
         {
             if (_options.UseEncryption)
             {
-                throw new NotImplementedException("WriteAt not implemented for encrypted storage");
+                throw new NotSupportedException("Encryption is only supported when writing entire pages.");
             }
             if (data.Length < offset + count) throw new IndexOutOfRangeException();
             using (var readStream = _readStreamCache.Open(FileAccess.Read))
@@ -570,17 +580,9 @@ namespace TinyFS
                         offset += ic;
                         count -= ic;
                     }
-                    if (count > 0)
-                    {
-                        var buffer = new byte[4];
-                        using (var readStream = _readStreamCache.Open(FileAccess.Read))
-                        {
-                            readStream.Position = handle * PAGE_SIZE + PAGE_HEADER_INDEX_PAGE_LINK;
-                            readStream.Read(buffer, 0, 4);                            
-                        }
-                        handle = BitConverter.ToUInt32(buffer, 0);
-                        header = ReadPageHeader(handle);
-                    }
+                    if (count <= 0) continue;
+                    handle = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_PAGE_LINK);
+                    header = ReadPageHeader(handle);
                 }
             }                
             return data;
@@ -610,23 +612,46 @@ namespace TinyFS
             {
                 using (LockManager.Instance.Get(handle, LockType.Read))
                 {
+                    if (_options.VerifyOnRead && !ValidatePageCrc(handle)) throw new InvalidDataException("Checksum verification failed. Corrupt data.");
+                    
                     uint bytesToRead = PAGE_DATA_SIZE - srcOffset > count ? count : PAGE_DATA_SIZE - srcOffset;
                     uint actualReadBytes;
-                    using (var readStream = _readStreamCache.Open(FileAccess.Read))
+
+                    if (_options.UseEncryption && (header[PAGE_HEADER_INDEX_STATUS] & (byte) PageInfoMask.Encypted) == (byte) PageInfoMask.Encypted)
                     {
-                        readStream.Position = handle * PAGE_SIZE + PAGE_HEADER_SIZE + srcOffset;
-                        actualReadBytes = (uint)readStream.Read(buffer, (int)totalReadBytes, (int)bytesToRead);
+                        // read the full page plaintext
+                        var page = new byte[PAGE_DATA_SIZE];
+                        using (var readStream = _readStreamCache.Open(FileAccess.Read))
+                        {
+                            readStream.Position = handle*PAGE_SIZE + PAGE_HEADER_SIZE;
+                            readStream.Read(page, 0, PAGE_DATA_SIZE);
+                        }
+                        var encryptedLength = BitConverter.ToInt32(page, ENCRYPTION_DATA_LENGTH_INDEX);
+                        var plaintext = Decrypt(page, ENCRYPTION_DATA_START_INDEX, encryptedLength);
+                        // copy data from plaintext into buffer. Make sure that we use the right offset.
+                        Buffer.BlockCopy(plaintext, (int)srcOffset, buffer, (int)totalReadBytes, (int)bytesToRead);
+                        actualReadBytes = bytesToRead;
                     }
+                    else
+                    {
+                        using (var readStream = _readStreamCache.Open(FileAccess.Read))
+                        {
+                            readStream.Position = handle * PAGE_SIZE + PAGE_HEADER_SIZE + srcOffset;
+                            actualReadBytes = (uint)readStream.Read(buffer, (int)totalReadBytes, (int)bytesToRead);
+                        }                        
+                    }                    
                     count -= actualReadBytes;
                     if (actualReadBytes != bytesToRead && count > 0)
                     {
+                        // we'll end up here if readStream.Read() returned a value less than bytesToRead.
                         srcOffset += actualReadBytes;
                     }
                     else
                     {
+                        // this is where we'll end up under normal circumstances.
                         srcOffset = 0;
-                        header = ReadPageHeader(handle);
                         handle = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_PAGE_LINK);
+                        header = ReadPageHeader(handle);
                     }
                     totalReadBytes += actualReadBytes;                        
                 }
@@ -643,32 +668,15 @@ namespace TinyFS
             }
         }
 
-        /*
-        private byte[] ReadPage(uint ix)
+        public byte[] ReadPage(uint handle)
         {
-            if (_stream == null) throw new ObjectDisposedException(GetType().FullName);
-            if (_stream.Length < ix * PAGE_SIZE) throw new IndexOutOfRangeException();
-
-            var header = ReadPageHeader(ix);
-            uint count = BitConverter.ToUInt32(header, PAGE_HEADER_INDEX_DATA_LENGTH);
-            count = count > PAGE_DATA_SIZE ? PAGE_DATA_SIZE : count;
-            var buffer = new byte[count];
-            uint position = ix*PAGE_SIZE;
-            int ic = 0;
-            lock(_sync)
-            {
-                _stream.Position = position;
-                ic = _stream.Read(buffer, 0, (int) count);
-            }
-            if (ic != count)
-            {
-                var tmp = new byte[ic];
-                Buffer.BlockCopy(buffer, 0, tmp, 0, ic);
-                buffer = tmp;
-            }
-            return buffer;
+            var buffer = new byte[PAGE_DATA_SIZE];
+            var readBytes = ReadAt(handle, buffer, 0, PAGE_DATA_SIZE);
+            if (readBytes == PAGE_DATA_SIZE) return buffer;
+            var bufferx = new byte[readBytes];
+            Buffer.BlockCopy(buffer, 0, bufferx, 0, (int)readBytes);
+            return bufferx;
         }
-        */
 
         public bool ValidateCrc()
         {
