@@ -34,12 +34,12 @@ namespace TinyFS
         {
             _compoundFile = new CompoundFile(path, new CompoundFile.CompoundFileOptions{ FlushAtWrite = true, UseWriteCache = false });
             _toc = new Toc();
-            if (!InitializeToc())
+            
+            if (InitializeToc()) return;
+            
+            if (!AllocateToc())
             {
-                if (!AllocateToc())
-                {
-                    throw new Exception("Catastrophic failure. Could not allocate TOC. File '" + path + "'");
-                }
+                throw new Exception("Catastrophic failure. Could not allocate TOC. File '" + path + "'");
             }
         }
 
@@ -77,32 +77,37 @@ namespace TinyFS
 
         public byte[] Read(string filename)
         {
+            uint handle;
             lock (_sync)
             {
                 if (!_toc.Entries.Any(t => t.Name.Equals(filename, StringComparison.InvariantCultureIgnoreCase))) throw new FileNotFoundException();
-                return Read(_toc.Entries.Find(t => t.Name.Equals(filename, StringComparison.InvariantCultureIgnoreCase)).ToFileInfo());                
+                handle = _toc.Entries.Find(t => t.Name.Equals(filename, StringComparison.InvariantCultureIgnoreCase)).Handle;
             }
+            return Read(handle);
         }
 
         public byte[] Read(FileInfo fileInfo)
         {
+            uint handle;
             lock(_sync)
             {
                 if (!_toc.Entries.Any(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase))) throw new FileNotFoundException();
                 var entry = _toc.Entries.Find(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase));
-                return _compoundFile.ReadAll(entry.Handle);                
+                handle = entry.Handle;
             }
+            return Read(handle);
         }
 
         public uint ReadAt(FileInfo fileInfo, byte[] buffer, uint srcOffset, uint count)
         {
+            uint handle;
             lock(_sync)
             {
                 if (!_toc.Entries.Any(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase))) throw new FileNotFoundException();
                 var entry = _toc.Entries.Find(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase));
-
-                return _compoundFile.ReadAt(entry.Handle, buffer, srcOffset, count);
+                handle = entry.Handle;
             }
+            return ReadAt(handle, buffer, srcOffset, count);
         }
 
         public void Write(string filename, byte[] buffer, int offset, int count)
@@ -116,11 +121,18 @@ namespace TinyFS
 
         public void Write(FileInfo fileInfo, byte[] buffer, int offset, int count)
         {
-            lock(_sync)
+            uint handle;
+            lock (_sync)
             {
-                if (!_toc.Entries.Any(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase))) throw new FileNotFoundException();
+                if (!_toc.Entries.Any(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase)))
+                    throw new FileNotFoundException();
                 var entry = _toc.Entries.Find(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase));
-                _compoundFile.Write(entry.Handle, buffer, offset, count);
+                handle = entry.Handle;
+            }
+
+            _compoundFile.Write(handle, buffer, offset, count);
+
+            lock(_sync){
                 _toc.Entries.Find(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase)).Length = (uint)count;
                 WriteToc();                
             }
@@ -128,13 +140,19 @@ namespace TinyFS
 
         public void WriteAt(FileInfo fileInfo, byte[] buffer, int offset, int count, uint destOffset)
         {
-            lock(_sync)
+            uint handle;
+            lock (_sync)
             {
-                if (!_toc.Entries.Any(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase))) throw new FileNotFoundException();
+                if (!_toc.Entries.Any(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase)))
+                    throw new FileNotFoundException();
                 var entry = _toc.Entries.Find(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase));
-                _compoundFile.WriteAt(entry.Handle, destOffset, buffer, offset, count);
-                _compoundFile.GetLength(entry.Handle);
-                _toc.Entries.Find(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase)).Length = (uint)count;
+                handle = entry.Handle;
+            }
+            _compoundFile.WriteAt(handle, destOffset, buffer, offset, count);
+            var totalLength = _compoundFile.GetLength(handle);            
+            lock (_sync)
+            {
+                _toc.Entries.Find(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase)).Length = totalLength;
                 WriteToc();                
             }
         }
@@ -150,14 +168,16 @@ namespace TinyFS
 
         public void Remove(FileInfo fileInfo)
         {
+            uint handle;
             lock(_sync)
             {
                 if (!_toc.Entries.Any(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase))) throw new FileNotFoundException();
                 var entry = _toc.Entries.Find(t => t.Name.Equals(fileInfo.Name, StringComparison.InvariantCultureIgnoreCase));
+                handle = entry.Handle;
                 _toc.Entries.Remove(entry);
-                WriteToc();
-                _compoundFile.Free(entry.Handle);                
+                WriteToc();                                
             }
+            _compoundFile.Free(handle);
         }
 
         private bool InitializeToc()
@@ -193,6 +213,16 @@ namespace TinyFS
         {
             var toc = _toc.Serialize();
             _compoundFile.Write(TOC_HANDLE, toc, 0, toc.Length);            
+        }
+
+        private byte[] Read(uint handle)
+        {
+            return _compoundFile.ReadAll(handle);
+        }
+
+        private uint ReadAt(uint handle, byte[] buffer, uint srcOffset, uint count)
+        {
+            return _compoundFile.ReadAt(handle, buffer, srcOffset, count);
         }
 
         public void Dispose()
